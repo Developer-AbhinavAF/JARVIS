@@ -1,0 +1,32 @@
+{
+  "name": "jarvis-ultimate-desktop",
+  "version": "2.0.0",
+  "description": "JARVIS Ultimate - AI Desktop Assistant",
+  "private": true,
+  "scripts": {
+    "install:all": "npm install && cd frontend && npm install && cd ../electron && npm install && cd ../backend && pip install -r requirements.txt",
+    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\" \"npm run dev:electron\"",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && python main.py",
+    "dev:electron": "wait-on http://localhost:3000 && cd electron && npm run dev",
+    "build": "npm run build:frontend && npm run build:electron",
+    "build:frontend": "cd frontend && npm run build",
+    "build:electron": "cd electron && npm run build",
+    "dist": "npm run build && cd electron && npm run dist",
+    "dist:win": "npm run build && cd electron && npm run build:win",
+    "dist:mac": "npm run build && cd electron && npm run build:mac",
+    "dist:linux": "npm run build && cd electron && npm run build:linux",
+    "clean": "rimraf frontend/dist electron/dist frontend/node_modules electron/node_modules",
+    "lint": "cd frontend && npm run lint",
+    "test": "cd frontend && npm test"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "wait-on": "^7.2.0",
+    "rimraf": "^5.0.5"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
