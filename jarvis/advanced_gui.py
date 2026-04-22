@@ -70,7 +70,7 @@ class ChatBubble(QFrame):
         # Timestamp
         time_str = datetime.now().strftime("%H:%M")
         time_label = QLabel(time_str)
-        time_label.setStyleSheet("color: #888; font-size: 10px;")
+        time_label.setStyleSheet("color: #ff80ab; font-size: 10px;")
         
         # Message
         msg_label = QLabel(text)
@@ -81,11 +81,13 @@ class ChatBubble(QFrame):
         if self.is_user:
             msg_label.setStyleSheet("""
                 QLabel {
-                    background-color: #4a90d9;
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                        stop:0 #ff4081, stop:1 #c51162);
                     color: white;
-                    padding: 10px 15px;
-                    border-radius: 15px;
-                    border-bottom-right-radius: 3px;
+                    padding: 12px 18px;
+                    border-radius: 20px;
+                    border-bottom-right-radius: 4px;
+                    font-weight: 500;
                 }
             """)
             layout.addStretch()
@@ -94,16 +96,116 @@ class ChatBubble(QFrame):
         else:
             msg_label.setStyleSheet("""
                 QLabel {
-                    background-color: #2d2d44;
-                    color: #eaeaea;
-                    padding: 10px 15px;
-                    border-radius: 15px;
-                    border-bottom-left-radius: 3px;
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                        stop:0 #3d1f3d, stop:1 #2a152a);
+                    color: #ffe4ec;
+                    padding: 12px 18px;
+                    border-radius: 20px;
+                    border-bottom-left-radius: 4px;
+                    border: 1px solid #ff4081;
+                    font-weight: 500;
                 }
             """)
             layout.addWidget(msg_label)
             layout.addWidget(time_label)
             layout.addStretch()
+
+
+class MusicVisualizerWidget(QWidget):
+    """Circular music visualizer bar."""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.bars = 16
+        self.bar_values = [0.3] * self.bars
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_bars)
+        self.timer.start(100)  # Update every 100ms
+        self.is_playing = False
+        self.setFixedHeight(120)
+        
+    def update_bars(self):
+        """Update bar heights with simulated audio data."""
+        if self.is_playing:
+            import random
+            # Simulate audio levels with some smoothness
+            for i in range(self.bars):
+                target = random.random() * 0.8 + 0.2
+                self.bar_values[i] = self.bar_values[i] * 0.7 + target * 0.3
+        else:
+            # Idle animation
+            import random
+            import math
+            import time
+            t = time.time()
+            for i in range(self.bars):
+                self.bar_values[i] = 0.2 + 0.1 * math.sin(t * 2 + i * 0.5)
+        self.update()
+    
+    def paintEvent(self, event):
+        """Paint the circular visualizer."""
+        from PyQt6.QtGui import QPainter, QColor, QRadialGradient, QPen
+        from PyQt6.QtCore import Qt, QRectF
+        
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        center_x = self.width() / 2
+        center_y = self.height() / 2
+        max_radius = min(center_x, center_y) - 10
+        
+        # Draw circular bars
+        for i in range(self.bars):
+            angle = (360 / self.bars) * i - 90  # Start from top
+            rad = angle * 3.14159 / 180
+            
+            # Bar dimensions based on value
+            bar_length = max_radius * self.bar_values[i]
+            inner_radius = 25
+            
+            # Color based on height (pink to red gradient)
+            intensity = int(255 * self.bar_values[i])
+            color = QColor(255, 64 + intensity // 3, 129 + intensity // 4)
+            
+            painter.setPen(QPen(color, 8, Qt.PenCapStyle.RoundCap))
+            
+            # Calculate start and end points
+            x1 = center_x + inner_radius * math.cos(rad)
+            y1 = center_y + inner_radius * math.sin(rad)
+            x2 = center_x + (inner_radius + bar_length) * math.cos(rad)
+            y2 = center_y + (inner_radius + bar_length) * math.sin(rad)
+            
+            painter.drawLine(int(x1), int(y1), int(x2), int(y2))
+        
+        # Draw center circle with gradient
+        gradient = QRadialGradient(center_x, center_y, 30)
+        gradient.setColorAt(0, QColor("#ff4081"))
+        gradient.setColorAt(1, QColor("#c51162"))
+        painter.setBrush(gradient)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(int(center_x - 25), int(center_y - 25), 50, 50)
+        
+        # Draw play/pause icon in center
+        painter.setPen(QPen(QColor("white"), 3))
+        if self.is_playing:
+            # Pause icon
+            painter.drawLine(int(center_x - 6), int(center_y - 10), int(center_x - 6), int(center_y + 10))
+            painter.drawLine(int(center_x + 6), int(center_y - 10), int(center_x + 6), int(center_y + 10))
+        else:
+            # Play icon
+            painter.drawLine(int(center_x - 5), int(center_y - 10), int(center_x + 10), int(center_y))
+            painter.drawLine(int(center_x - 5), int(center_y + 10), int(center_x + 10), int(center_y))
+            painter.drawLine(int(center_x - 5), int(center_y - 10), int(center_x - 5), int(center_y + 10))
+    
+    def set_playing(self, playing: bool):
+        """Set playing state."""
+        self.is_playing = playing
+        self.update()
+    
+    def mousePressEvent(self, event):
+        """Toggle play/pause on click."""
+        self.is_playing = not self.is_playing
+        self.update()
 
 
 class JARVISMainWindow(QMainWindow):
@@ -182,11 +284,26 @@ class JARVISMainWindow(QMainWindow):
         layout = QVBoxLayout(sidebar)
         layout.setSpacing(15)
         
-        # Title
-        title = QLabel("🤖 JARVIS")
-        title.setStyleSheet("font-size: 24px; font-weight: bold;")
+        # Title with modern styling
+        title_container = QFrame()
+        title_layout = QVBoxLayout(title_container)
+        title_layout.setSpacing(5)
+        
+        title = QLabel("● JARVIS")
+        title.setStyleSheet("""
+            font-size: 28px; 
+            font-weight: bold;
+            color: #ff4081;
+        """)
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title)
+        title_layout.addWidget(title)
+        
+        subtitle = QLabel("AI Assistant")
+        subtitle.setStyleSheet("font-size: 12px; color: #ff80ab;")
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_layout.addWidget(subtitle)
+        
+        layout.addWidget(title_container)
         
         # Status section
         status_group = QGroupBox("System Status")
@@ -239,8 +356,8 @@ class JARVISMainWindow(QMainWindow):
         layout.addStretch()
         
         # Version
-        version = QLabel("v2.0 - Ultimate")
-        version.setStyleSheet("color: #888; font-size: 11px;")
+        version = QLabel("v2.0 ● Ultimate Edition")
+        version.setStyleSheet("color: #ff80ab; font-size: 11px;")
         version.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(version)
         
@@ -451,8 +568,16 @@ class JARVISMainWindow(QMainWindow):
         
         # Music section
         music_label = QLabel("🎵 Music & Media")
-        music_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        music_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #ff4081;")
         layout.addWidget(music_label)
+        
+        # Circular Music Visualizer
+        visualizer_label = QLabel("🎧 Audio Visualizer (Click to play/pause)")
+        visualizer_label.setStyleSheet("font-size: 11px; color: #ff80ab;")
+        layout.addWidget(visualizer_label)
+        
+        self.music_visualizer = MusicVisualizerWidget()
+        layout.addWidget(self.music_visualizer, alignment=Qt.AlignmentFlag.AlignCenter)
         
         # Spotify
         spotify_layout = QHBoxLayout()
@@ -476,9 +601,23 @@ class JARVISMainWindow(QMainWindow):
         
         # Media controls
         controls_layout = QHBoxLayout()
-        for btn_text in ["⏮ Prev", "⏯ Play/Pause", "⏭ Next", "🔊 Vol+", "🔉 Vol-"]:
-            btn = QPushButton(btn_text)
-            controls_layout.addWidget(btn)
+        
+        prev_btn = QPushButton("⏮ Prev")
+        controls_layout.addWidget(prev_btn)
+        
+        play_btn = QPushButton("⏯ Play/Pause")
+        play_btn.clicked.connect(self.toggle_music_playback)
+        controls_layout.addWidget(play_btn)
+        
+        next_btn = QPushButton("⏭ Next")
+        controls_layout.addWidget(next_btn)
+        
+        vol_up_btn = QPushButton("🔊 Vol+")
+        controls_layout.addWidget(vol_up_btn)
+        
+        vol_down_btn = QPushButton("🔉 Vol-")
+        controls_layout.addWidget(vol_down_btn)
+        
         layout.addLayout(controls_layout)
         
         # Games
@@ -662,110 +801,171 @@ class JARVISMainWindow(QMainWindow):
         self.clock_timer.start(1000)  # Every second
     
     def apply_theme(self):
-        """Apply dark or light theme."""
+        """Apply pinkish/reddish modern AI theme."""
         if self.dark_mode:
+            # Pinkish/Reddish modern AI theme
             self.setStyleSheet("""
                 QMainWindow {
-                    background-color: #1a1a2e;
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
+                        stop:0 #1a0a1a, stop:0.5 #2d142d, stop:1 #1a0a1a);
                 }
                 QWidget {
-                    background-color: #1a1a2e;
-                    color: #eaeaea;
+                    background-color: transparent;
+                    color: #ffe4ec;
                 }
                 QFrame {
-                    background-color: #16213e;
-                    border: 1px solid #0f3460;
-                    border-radius: 8px;
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                        stop:0 #2d1a2d, stop:1 #1f0f1f);
+                    border: 2px solid #ff6b9d;
+                    border-radius: 12px;
                 }
                 QGroupBox {
-                    background-color: #16213e;
-                    border: 1px solid #0f3460;
-                    border-radius: 8px;
-                    margin-top: 10px;
-                    padding-top: 10px;
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                        stop:0 #3d1f3d, stop:1 #2a152a);
+                    border: 2px solid #ff4081;
+                    border-radius: 12px;
+                    margin-top: 15px;
+                    padding-top: 15px;
+                    font-weight: bold;
+                    color: #ff80ab;
                 }
                 QGroupBox::title {
                     subcontrol-origin: margin;
-                    left: 10px;
-                    padding: 0 5px;
+                    left: 15px;
+                    padding: 0 10px;
+                    color: #ff4081;
                 }
                 QTextEdit, QLineEdit {
-                    background-color: #0f0f23;
-                    color: #eaeaea;
-                    border: 1px solid #0f3460;
-                    border-radius: 6px;
-                    padding: 8px;
+                    background-color: #1a0f1a;
+                    color: #ffe4ec;
+                    border: 2px solid #c51162;
+                    border-radius: 8px;
+                    padding: 10px;
+                    selection-background-color: #ff4081;
                 }
                 QPushButton {
-                    background-color: #0f3460;
-                    color: #eaeaea;
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                        stop:0 #ff4081, stop:1 #c51162);
+                    color: white;
                     border: none;
-                    border-radius: 6px;
-                    padding: 8px 16px;
+                    border-radius: 20px;
+                    padding: 10px 20px;
+                    font-weight: bold;
+                    min-height: 35px;
                 }
                 QPushButton:hover {
-                    background-color: #e94560;
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                        stop:0 #ff80ab, stop:1 #f50057);
+                    border: 2px solid #ff80ab;
                 }
                 QPushButton:pressed {
-                    background-color: #c73e54;
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                        stop:0 #c51162, stop:1 #880e4f);
                 }
                 QComboBox, QSpinBox, QDoubleSpinBox {
-                    background-color: #0f0f23;
-                    color: #eaeaea;
-                    border: 1px solid #0f3460;
-                    border-radius: 6px;
-                    padding: 5px;
+                    background-color: #1a0f1a;
+                    color: #ffe4ec;
+                    border: 2px solid #c51162;
+                    border-radius: 8px;
+                    padding: 8px;
                 }
                 QListWidget {
-                    background-color: #0f0f23;
-                    color: #eaeaea;
-                    border: 1px solid #0f3460;
-                    border-radius: 6px;
+                    background-color: #1a0f1a;
+                    color: #ffe4ec;
+                    border: 2px solid #c51162;
+                    border-radius: 8px;
+                    outline: none;
+                }
+                QListWidget::item:selected {
+                    background-color: #ff4081;
+                    color: white;
+                    border-radius: 4px;
                 }
                 QTabWidget::pane {
-                    background-color: #16213e;
-                    border: 1px solid #0f3460;
-                    border-radius: 6px;
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                        stop:0 #2d1a2d, stop:1 #1a0f1a);
+                    border: 2px solid #ff4081;
+                    border-radius: 12px;
                 }
                 QTabBar::tab {
-                    background-color: #0f3460;
-                    color: #eaeaea;
-                    padding: 8px 16px;
-                    border-top-left-radius: 6px;
-                    border-top-right-radius: 6px;
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                        stop:0 #4a1f4a, stop:1 #2d1a2d);
+                    color: #ff80ab;
+                    padding: 12px 20px;
+                    border-top-left-radius: 12px;
+                    border-top-right-radius: 12px;
+                    font-weight: bold;
                 }
                 QTabBar::tab:selected {
-                    background-color: #e94560;
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                        stop:0 #ff4081, stop:1 #c51162);
+                    color: white;
                 }
                 QStatusBar {
-                    background-color: #16213e;
-                    color: #eaeaea;
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #2d1a2d, stop:1 #1a0f1a);
+                    color: #ff80ab;
+                    border-top: 2px solid #ff4081;
                 }
                 QMenuBar {
-                    background-color: #16213e;
-                    color: #eaeaea;
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #2d1a2d, stop:1 #1a0f1a);
+                    color: #ffe4ec;
+                    border-bottom: 2px solid #ff4081;
                 }
                 QMenuBar::item:selected {
-                    background-color: #e94560;
+                    background-color: #ff4081;
+                    color: white;
+                    border-radius: 4px;
                 }
                 QMenu {
-                    background-color: #16213e;
-                    color: #eaeaea;
-                    border: 1px solid #0f3460;
+                    background-color: #2d1a2d;
+                    color: #ffe4ec;
+                    border: 2px solid #ff4081;
+                    border-radius: 8px;
                 }
                 QMenu::item:selected {
-                    background-color: #e94560;
+                    background-color: #ff4081;
+                    color: white;
                 }
                 QToolBar {
-                    background-color: #16213e;
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #2d1a2d, stop:1 #1a0f1a);
                     border: none;
-                    spacing: 5px;
+                    spacing: 10px;
+                    padding: 5px;
                 }
                 QScrollArea {
                     border: none;
                 }
                 QLabel {
-                    color: #eaeaea;
+                    color: #ffe4ec;
+                }
+                QProgressBar {
+                    border: 2px solid #c51162;
+                    border-radius: 10px;
+                    text-align: center;
+                    background-color: #1a0f1a;
+                }
+                QProgressBar::chunk {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #ff80ab, stop:1 #ff4081);
+                    border-radius: 8px;
+                }
+                QSlider::groove:horizontal {
+                    height: 8px;
+                    background: #1a0f1a;
+                    border: 1px solid #c51162;
+                    border-radius: 4px;
+                }
+                QSlider::handle:horizontal {
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                        stop:0 #ff80ab, stop:1 #ff4081);
+                    border: 2px solid #ffe4ec;
+                    width: 18px;
+                    height: 18px;
+                    margin: -5px 0;
+                    border-radius: 9px;
                 }
             """)
         else:
@@ -1031,11 +1231,24 @@ class JARVISMainWindow(QMainWindow):
         if query:
             self.add_jarvis_message(f"🎵 Playing on Spotify: {query}")
             self.spotify_search.clear()
+            # Activate visualizer
+            self.music_visualizer.set_playing(True)
     
     def play_mood_music(self, mood: str):
         """Play music for mood."""
         mood = mood.replace("😊 ", "").replace("😴 ", "").replace("💪 ", "").replace("🧠 ", "")
         self.add_jarvis_message(f"🎵 Playing {mood} music for you...")
+        # Activate visualizer
+        self.music_visualizer.set_playing(True)
+    
+    def toggle_music_playback(self):
+        """Toggle music playback and visualizer."""
+        is_playing = self.music_visualizer.is_playing
+        self.music_visualizer.set_playing(not is_playing)
+        if not is_playing:
+            self.add_jarvis_message("▶️ Music playback started")
+        else:
+            self.add_jarvis_message("⏸️ Music playback paused")
     
     def launch_game(self, game: str):
         """Launch a game."""

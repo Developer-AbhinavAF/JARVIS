@@ -28,12 +28,12 @@ def _print_banner() -> None:
     """Print an ASCII banner on startup."""
 
     banner = r"""
-     __    ___    ____ _    __  _____
-    / /   /   |  / __ \ |  / / / ___/
-   / /   / /| | / /_/ / | / /  \__ \
-  / /___/ ___ |/ _, _/| |/ /  ___/ /
- /_____/_/  |_/_/ |_| |___/  /____/
-
+      ██╗ █████╗ ██████╗ ██╗   ██╗██╗███████╗
+      ██║██╔══██╗██╔══██╗██║   ██║██║██╔════╝
+      ██║███████║██████╔╝██║   ██║██║███████╗
+ ██╗  ██║██╔══██║██╔══██╗╚██╗ ██╔╝██║╚════██║
+ ╚█████╔╝██║  ██║██║  ██║ ╚████╔╝ ██║███████║
+  ╚════╝ ╚═╝  ╚═╝╚═╝  ╚═╝  ╚═══╝  ╚═╝╚══════╝
     """
     print(banner)
 
@@ -474,10 +474,10 @@ def _handle_built_in_command(query: str, tts: TTSEngine | None, llm: JarvisLLM, 
 
 
 def _select_mode() -> str:
-    """Ask user to select voice, text, or GUI mode with 10 second timeout.
+    """Ask user to select voice (full GUI) or text (simple chat) mode.
     
     Returns:
-        'voice', 'text', or 'gui'
+        'voice' for full modern GUI, 'text' for simple chat
     """
     import threading
     import sys
@@ -486,21 +486,26 @@ def _select_mode() -> str:
     print("\n" + "="*50)
     print("  JARVIS MODE SELECTOR")
     print("="*50)
-    print("  Press 'y' then Enter for VOICE mode (speech to speech)")
-    print("  Press 'n' then Enter for TEXT mode (text to text, NO speech)")
-    print("  Press 'g' then Enter for GUI mode (graphical interface)")
-    print("  Waiting 10 seconds...")
+    print("  Press 'y' then Enter for FULL GUI MODE")
+    print("    → Modern AI interface with visuals, music, themes")
+    print("    → Voice control + Text input")
+    print("    → All features with beautiful UI")
+    print()
+    print("  Press 'n' then Enter for SIMPLE CHAT MODE")
+    print("    → ChatGPT-style text conversation")
+    print("    → Clean terminal interface")
+    print("    → No voice, pure text")
+    print()
+    print("  Waiting 10 seconds... (default: FULL GUI)")
     print("="*50)
     
-    result = ['voice']  # Default
+    result = ['voice']  # Default to full GUI
     
     def input_thread():
         try:
-            user_input = input("\n  Your choice (y/n/g): ").strip().lower()
+            user_input = input("\n  Your choice (y/n): ").strip().lower()
             if user_input == 'n':
                 result[0] = 'text'
-            elif user_input == 'g':
-                result[0] = 'gui'
             elif user_input == 'y' or user_input == '':
                 result[0] = 'voice'
         except:
@@ -513,71 +518,85 @@ def _select_mode() -> str:
     t.join(timeout=10)
     
     mode = result[0]
-    print(f"\n  Selected mode: {mode.upper()}")
+    if mode == 'voice':
+        print("\n  Selected: FULL MODERN GUI MODE")
+    else:
+        print("\n  Selected: SIMPLE CHAT MODE")
     print("="*50 + "\n")
     
     return mode
 
 
-class TextInterface:
-    """Pure text-based interface for JARVIS - NO speech at all."""
+class SimpleChatInterface:
+    """ChatGPT-style simple terminal interface for text mode."""
     
     def __init__(self, llm: JarvisLLM, dashboard):
         self.llm = llm
         self.dashboard = dashboard
-        # NO TTS - pure text mode
+        self.chat_history: list[dict] = []
         
+    def _print_chatgpt_header(self):
+        """Print ChatGPT-style header."""
+        os.system('cls' if os.name == 'nt' else 'clear')
+        print("\n" + "═" * 60)
+        print("  🤖 JARVIS AI - Simple Chat Mode")
+        print("  ChatGPT-style conversation | Type 'exit' to quit")
+        print("═" * 60 + "\n")
+    
+    def _format_message(self, role: str, content: str):
+        """Format message like ChatGPT."""
+        timestamp = datetime.now().strftime("%H:%M")
+        if role == "user":
+            return f"\n  🧑 You [{timestamp}]:\n     {content}\n"
+        else:
+            return f"  🤖 JARVIS [{timestamp}]:\n     {content}\n"
+    
     def run(self) -> None:
-        """Run pure text-based command loop."""
-        print("\n" + "="*50)
-        print("  JARVIS TEXT MODE")
-        print("  Pure text-to-text communication")
-        print("="*50)
-        print("  Commands: 'exit', 'quit', 'voice' (switch to voice)")
-        print("-" * 50 + "\n")
+        """Run ChatGPT-style chat loop."""
+        self._print_chatgpt_header()
+        
+        # Initial greeting
+        print("  🤖 JARVIS: Hello! I'm JARVIS, your AI assistant.")
+        print("             How can I help you today?\n")
         
         while True:
             try:
-                user_input = input("  You: ").strip()
+                # Get user input with ChatGPT-style prompt
+                user_input = input("  🧑 You: ").strip()
                 if not user_input:
                     continue
+                
+                # Save to history
+                self.chat_history.append({"role": "user", "content": user_input, "time": datetime.now()})
                     
                 if user_input.lower() in ['exit', 'quit', 'goodbye', 'bye']:
-                    print("\n  JARVIS: Shutting down. Goodbye.")
-                    print("="*50)
-                    break
-                    
-                if user_input.lower() == 'voice':
-                    print("\n  JARVIS: Switching to voice mode...")
-                    print("="*50 + "\n")
-                    # Initialize TTS for voice mode
-                    try:
-                        tts = TTSEngine()
-                        run_voice_loop(self.llm, self.dashboard, tts)
-                    except Exception as e:
-                        print(f"  Error: Could not start voice mode: {e}")
-                        print("  Staying in text mode.")
+                    print("\n  🤖 JARVIS: Goodbye! Have a great day. 👋\n")
                     break
                 
-                # Process command - NO TTS at all
-                print("  JARVIS: Processing...")
+                # Show typing indicator
+                print("  🤖 JARVIS: Thinking...", end="", flush=True)
                 
-                # Check for built-in commands (pass None for tts = pure text)
+                # Check for built-in commands first
+                result = None
                 if _handle_built_in_command(user_input.lower(), None, self.llm, self.dashboard):
-                    print()  # Empty line for readability
-                    continue
+                    result = "Command executed."
+                else:
+                    # Use LLM for response
+                    result = self.llm.chat(user_input)
                 
-                # Use LLM for other queries
-                response = self.llm.chat(user_input)
-                print(f"\n  JARVIS: {response}\n")
+                # Clear typing indicator and show response
+                print("\r" + " " * 30 + "\r", end="")  # Clear the line
+                print(f"  🤖 JARVIS: {result}\n")
+                
+                # Save to history
+                self.chat_history.append({"role": "assistant", "content": result, "time": datetime.now()})
                     
             except KeyboardInterrupt:
-                print("\n\n  JARVIS: Interrupted. Goodbye.")
-                print("="*50)
+                print("\n\n  🤖 JARVIS: Goodbye! 👋\n")
                 break
             except Exception as e:
-                logger.exception("Text mode error")
-                print(f"  Error: {str(e)}")
+                logger.exception("Chat error")
+                print(f"\n  ❌ Error: {str(e)}\n")
 
 
 def run_voice_loop(llm: JarvisLLM, dashboard, tts: TTSEngine | None) -> None:
@@ -732,27 +751,24 @@ def main() -> None:
     llm = JarvisLLM()
 
     # Run appropriate mode
-    if mode == 'gui':
-        # GUI mode - Launch the advanced GUI
-        print("  Launching GUI mode...")
+    if mode == 'voice':
+        # Full modern GUI mode (with voice support if available)
+        print("  Launching modern GUI...")
         try:
             from jarvis.advanced_gui import launch_gui_with_core
             launch_gui_with_core(llm, dashboard, tts)
         except Exception as e:
             logger.exception("GUI launch failed")
             print(f"  Error launching GUI: {e}")
-            print("  Falling back to text mode...")
-            text_interface = TextInterface(llm, dashboard)
-            text_interface.run()
-    elif mode == 'text':
-        # Pure text mode - NO TTS at all
-        text_interface = TextInterface(llm, dashboard)
-        text_interface.run()
+            print("  Falling back to terminal voice mode...")
+            if tts:
+                tts.speak_sync("JARVIS online. Systems nominal. Voice mode active.")
+            run_voice_loop(llm, dashboard, tts)
     else:
-        # Voice mode - with TTS
-        if tts:
-            tts.speak_sync("JARVIS online. Systems nominal. Voice mode active.")
-        run_voice_loop(llm, dashboard, tts)
+        # Simple chat mode - ChatGPT style terminal interface
+        print("  Starting simple chat mode...")
+        simple_chat = SimpleChatInterface(llm, dashboard)
+        simple_chat.run()
 
 
 if __name__ == "__main__":
