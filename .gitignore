@@ -1,0 +1,74 @@
+# Large binaries and executables
+*.exe
+*.dll
+*.bin
+*.dat
+*.msg
+Windsurf.exe
+
+# IDE/Editor files
+resources/app/
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments (CRITICAL - contains large binaries)
+.venv/
+venv/
+ENV/
+env/
+**/.venv/
+**/venv/
+
+# Environment variables
+.env
+
+# Database files (but keep structure)
+*.db
+*.sqlite3
+jarvis_memory.db
+
+# Log files
+*.log
+jarvis_log.txt
+
+# Screenshots and outputs
+*.png
+*.jpg
+*.jpeg
+jarvis_screenshot.png
+jarvis_memory_export.txt
+
+# Node modules (if any)
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Windsurf specific
+Windsurf/
+windsurf/
