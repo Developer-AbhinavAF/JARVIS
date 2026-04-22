@@ -403,6 +403,73 @@ def _handle_built_in_command(query: str, tts: TTSEngine | None, llm: JarvisLLM, 
                 print(f"  {result}")
             return True
 
+    # Memory/Todo commands - built-in for better reliability
+    # Add todo
+    if q.startswith(("add todo ", "create todo ", "new todo ", "add task ")):
+        for prefix in ["add todo ", "create todo ", "new todo ", "add task "]:
+            if q.startswith(prefix):
+                todo_text = q[len(prefix):].strip()
+                if todo_text:
+                    # Check for priority
+                    priority = 3  # default
+                    if "priority" in todo_text:
+                        import re
+                        match = re.search(r'priority\s*(\d+)', todo_text, re.IGNORECASE)
+                        if match:
+                            priority = int(match.group(1))
+                            todo_text = re.sub(r'priority\s*\d+', '', todo_text, flags=re.IGNORECASE).strip()
+                    
+                    result = memory.add_todo(todo_text, priority)
+                    if tts:
+                        tts.speak(result)
+                    else:
+                        print(f"  {result}")
+                    return True
+                break
+    
+    # Show todos
+    if any(p in q for p in ["show todos", "list todos", "what are my todos", "my tasks", "my todo list"]):
+        todos = memory.get_todos()
+        if todos:
+            lines = [f"{i+1}. [{t['status'].upper()}] {t['task']} (Priority: {t['priority']})" for i, t in enumerate(todos)]
+            response = "Your todos:\n" + "\n".join(lines)
+        else:
+            response = "No todos found. Say 'add todo [task]' to create one."
+        if tts:
+            tts.speak(response.replace("\n", ". "))
+        else:
+            print(f"  {response}")
+        return True
+    
+    # Remember/Note commands
+    if q.startswith(("remember ", "note ", "write down ", "save that ")):
+        for prefix in ["remember ", "note ", "write down ", "save that "]:
+            if q.startswith(prefix):
+                note_text = q[len(prefix):].strip()
+                if note_text:
+                    result = memory.add_note(note_text)
+                    if tts:
+                        tts.speak(result)
+                    else:
+                        print(f"  {result}")
+                    return True
+                break
+    
+    # Entertainment shortcuts
+    if q.startswith(("launch game ", "play game ", "start game ")):
+        for prefix in ["launch game ", "play game ", "start game "]:
+            if q.startswith(prefix):
+                game = q[len(prefix):].strip()
+                if game:
+                    from jarvis.entertainment import game_launcher
+                    result = game_launcher.launch_game(game)
+                    if tts:
+                        tts.speak(result)
+                    else:
+                        print(f"  {result}")
+                    return True
+                break
+
     return False
 
 
