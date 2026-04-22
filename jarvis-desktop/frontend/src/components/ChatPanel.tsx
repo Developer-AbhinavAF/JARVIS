@@ -1,13 +1,28 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Mic, Copy, Volume2, Trash2, MoreHorizontal } from 'lucide-react';
+import { Send, Mic, Copy, Volume2, Trash2, CheckSquare, StickyNote, Search, ExternalLink, Terminal, AlertCircle } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { useChat } from '@/hooks/useApi';
 import type { Message } from '@/types';
 
+interface ChatResponse {
+  response: string;
+  actions?: Array<{
+    type: string;
+    app?: string;
+    path?: string;
+    url?: string;
+    query?: string;
+    data?: any;
+  }>;
+  suggestions?: string[];
+}
+
 export default function ChatPanel() {
   const { messages, addMessage, deleteMessage, isTyping, setIsTyping, mode } = useStore();
   const [input, setInput] = useState('');
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const { sendMessage, loading } = useChat();
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -24,31 +39,73 @@ export default function ChatPanel() {
     inputRef.current?.focus();
   }, []);
 
-  const handleSend = async () => {
+  const handleSend = useCallback(async () => {
     if (!input.trim() || loading) return;
 
     const userMessage = input.trim();
     setInput('');
+    setError(null);
+    setSuggestions([]);
 
     // Add user message
     addMessage({ role: 'user', content: userMessage });
     setIsTyping(true);
 
     try {
-      // Send to API
-      const response = await sendMessage(userMessage);
+      // Send to API - use real JARVIS AI
+      const response: ChatResponse = await sendMessage(userMessage);
+      
+      // Execute any actions returned by JARVIS
+      if (response.actions && response.actions.length > 0) {
+        executeActions(response.actions);
+      }
+      
+      // Update suggestions
+      if (response.suggestions) {
+        setSuggestions(response.suggestions);
+      }
       
       // Add AI response
-      addMessage({ role: 'assistant', content: response.response });
-    } catch (error) {
+      addMessage({ 
+        role: 'assistant', 
+        content: response.response,
+        actions: response.actions 
+      });
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Failed to connect to JARVIS AI';
+      setError(errorMsg);
       addMessage({
         role: 'assistant',
-        content: 'I apologize, but I encountered an error processing your request. Please try again.',
+        content: `⚠️ **Connection Error**\n\nI couldn't process your request. Please ensure:\n1. The backend server is running (python jarvis_api.py)\n2. Check your internet connection\n3. Try again in a moment\n\nError: ${errorMsg}`,
       });
     } finally {
       setIsTyping(false);
     }
-  };
+  }, [input, loading, addMessage, setIsTyping, sendMessage]);
+
+  // Execute actions returned by JARVIS
+  const executeActions = useCallback((actions: ChatResponse['actions']) => {
+    if (!actions) return;
+    
+    actions.forEach(action => {
+      switch (action.type) {
+        case 'open_url':
+          if (action.url) {
+            window.open(action.url, '_blank');
+          }
+          break;
+        case 'screenshot':
+          // Screenshot was already taken on backend
+          console.log('Screenshot saved:', action.path);
+          break;
+        case 'add_todo':
+        case 'add_note':
+          // Memory items were already saved on backend
+          console.log('Memory saved:', action);
+          break;
+      }
+    });
+  }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -120,32 +177,77 @@ export default function ChatPanel() {
         )}
       </div>
 
+      {/* AI Suggestions */}
+      {suggestions.length > 0 && (
+        <div className="px-6 py-2">
+          <p className="text-xs text-jarvis-textMuted mb-2">Suggested:</p>
+          <div className="flex gap-2 overflow-x-auto">
+            {suggestions.map((suggestion, index) => (
+              <motion.button
+                key={index}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: index * 0.1 }}
+                className="px-3 py-1.5 rounded-lg bg-jarvis-accentPink/10 text-sm text-jarvis-accentPink hover:bg-jarvis-accentPink/20 transition-all"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => {
+                  setInput(suggestion);
+                  inputRef.current?.focus();
+                }}
+              >
+                {suggestion}
+              </motion.button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Quick Actions */}
       <div className="px-6 py-3 flex gap-2 overflow-x-auto">
-        {['Take Screenshot', 'Open YouTube', 'Set Reminder', 'Daily Briefing'].map(
-          (action) => (
+        {[
+          { label: 'Take Screenshot', icon: Terminal, command: 'take screenshot' },
+          { label: 'Open YouTube', icon: ExternalLink, command: 'open youtube' },
+          { label: 'System Status', icon: Terminal, command: 'system status' },
+          { label: 'Daily Briefing', icon: CheckSquare, command: 'daily briefing' },
+        ].map((action) => {
+          const Icon = action.icon;
+          return (
             <motion.button
-              key={action}
-              className="px-4 py-2 rounded-lg glass-panel text-sm text-jarvis-textMuted hover:text-jarvis-text whitespace-nowrap transition-all"
+              key={action.label}
+              className="px-4 py-2 rounded-lg glass-panel text-sm text-jarvis-textMuted hover:text-jarvis-text whitespace-nowrap transition-all flex items-center gap-2"
               whileHover={{ scale: 1.02, backgroundColor: 'rgba(255,255,255,0.08)' }}
               whileTap={{ scale: 0.98 }}
               onClick={() => {
-                addMessage({ role: 'user', content: action.toLowerCase() });
-                setIsTyping(true);
-                setTimeout(() => {
-                  addMessage({
-                    role: 'assistant',
-                    content: `I'll help you ${action.toLowerCase()}. Let me process that for you.`,
-                  });
-                  setIsTyping(false);
-                }, 1000);
+                setInput(action.command);
+                handleSend();
               }}
             >
-              {action}
+              <Icon size={14} />
+              {action.label}
             </motion.button>
-          )
-        )}
+          );
+        })}
       </div>
+
+      {/* Error Banner */}
+      {error && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          className="mx-6 mb-3 p-3 rounded-lg bg-red-500/20 border border-red-500/30 flex items-center gap-2"
+        >
+          <AlertCircle size={16} className="text-red-400" />
+          <span className="text-sm text-red-200">{error}</span>
+          <button
+            onClick={() => setError(null)}
+            className="ml-auto text-xs text-red-300 hover:text-red-100"
+          >
+            Dismiss
+          </button>
+        </motion.div>
+      )}
 
       {/* Input Area */}
       <div className="p-4 border-t border-white/10">
@@ -196,7 +298,7 @@ export default function ChatPanel() {
         </div>
 
         <p className="text-xs text-jarvis-textMuted mt-2 text-center">
-          Tip: You can say "hello" to wake me up
+          JARVIS is fully functional • Try: "open chrome", "system status", "add todo buy milk"
         </p>
       </div>
     </div>
@@ -242,12 +344,35 @@ function MessageBubble({
         {isFirst && !isUser ? (
           <div className="space-y-2">
             <h2 className="text-lg font-semibold">Hello, I'm JARVIS.</h2>
-            <p className="text-jarvis-textMuted">How can I assist you today?</p>
+            <p className="text-jarvis-textMuted">I'm your fully functional AI assistant. I can control your system, search the web, manage your tasks, and more. What can I do for you?</p>
           </div>
         ) : (
-          <p className="text-sm leading-relaxed whitespace-pre-wrap">
-            {message.content}
-          </p>
+          <div className="space-y-2">
+            <p className="text-sm leading-relaxed whitespace-pre-wrap">
+              {message.content}
+            </p>
+            {/* Show action badges */}
+            {message.actions && message.actions.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-2 pt-2 border-t border-white/10">
+                {message.actions.map((action, idx) => (
+                  <span
+                    key={idx}
+                    className="px-2 py-0.5 rounded text-[10px] bg-jarvis-accentPink/20 text-jarvis-accentPink"
+                  >
+                    {action.type === 'open_app' && '🚀 Opened'}
+                    {action.type === 'close_app' && '❌ Closed'}
+                    {action.type === 'screenshot' && '📸 Screenshot'}
+                    {action.type === 'web_search' && '🔍 Search'}
+                    {action.type === 'add_todo' && '✅ Todo Added'}
+                    {action.type === 'add_note' && '📝 Note Saved'}
+                    {action.type === 'volume' && `🔊 ${action.action}`}
+                    {action.type === 'system_status' && '📊 System Status'}
+                    {action.type === 'daily_briefing' && '📅 Briefing'}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {/* Actions */}

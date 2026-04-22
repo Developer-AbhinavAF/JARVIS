@@ -1,15 +1,21 @@
 export type Mode = 'text' | 'speech';
 
+export interface MessageAction {
+  type: string;
+  app?: string;
+  path?: string;
+  url?: string;
+  query?: string;
+  action?: string;
+  data?: any;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;
-  actions?: {
-    copy?: boolean;
-    speak?: boolean;
-    delete?: boolean;
-  };
+  actions?: MessageAction[];
 }
 
 export interface SystemStats {
