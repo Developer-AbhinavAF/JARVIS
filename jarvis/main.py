@@ -474,10 +474,10 @@ def _handle_built_in_command(query: str, tts: TTSEngine | None, llm: JarvisLLM, 
 
 
 def _select_mode() -> str:
-    """Ask user to select voice or text mode with 10 second timeout.
+    """Ask user to select voice, text, or GUI mode with 10 second timeout.
     
     Returns:
-        'voice' or 'text'
+        'voice', 'text', or 'gui'
     """
     import threading
     import sys
@@ -488,6 +488,7 @@ def _select_mode() -> str:
     print("="*50)
     print("  Press 'y' then Enter for VOICE mode (speech to speech)")
     print("  Press 'n' then Enter for TEXT mode (text to text, NO speech)")
+    print("  Press 'g' then Enter for GUI mode (graphical interface)")
     print("  Waiting 10 seconds...")
     print("="*50)
     
@@ -495,9 +496,11 @@ def _select_mode() -> str:
     
     def input_thread():
         try:
-            user_input = input("\n  Your choice (y/n): ").strip().lower()
+            user_input = input("\n  Your choice (y/n/g): ").strip().lower()
             if user_input == 'n':
                 result[0] = 'text'
+            elif user_input == 'g':
+                result[0] = 'gui'
             elif user_input == 'y' or user_input == '':
                 result[0] = 'voice'
         except:
@@ -729,7 +732,19 @@ def main() -> None:
     llm = JarvisLLM()
 
     # Run appropriate mode
-    if mode == 'text':
+    if mode == 'gui':
+        # GUI mode - Launch the advanced GUI
+        print("  Launching GUI mode...")
+        try:
+            from jarvis.advanced_gui import launch_gui_with_core
+            launch_gui_with_core(llm, dashboard, tts)
+        except Exception as e:
+            logger.exception("GUI launch failed")
+            print(f"  Error launching GUI: {e}")
+            print("  Falling back to text mode...")
+            text_interface = TextInterface(llm, dashboard)
+            text_interface.run()
+    elif mode == 'text':
         # Pure text mode - NO TTS at all
         text_interface = TextInterface(llm, dashboard)
         text_interface.run()

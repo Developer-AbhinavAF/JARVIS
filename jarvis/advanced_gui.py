@@ -1126,7 +1126,7 @@ class JARVISMainWindow(QMainWindow):
 
 
 def launch_gui(jarvis_core=None):
-    """Launch the JARVIS GUI."""
+    """Launch the JARVIS GUI standalone."""
     if not HAS_PYQT:
         print("Error: PyQt6 is required for GUI.")
         print("Install with: pip install PyQt6")
@@ -1141,6 +1141,64 @@ def launch_gui(jarvis_core=None):
     
     window = JARVISMainWindow(jarvis_core)
     window.show()
+    
+    sys.exit(app.exec())
+
+
+def launch_gui_with_core(llm, dashboard, tts):
+    """Launch GUI with core JARVIS components from main.py.
+    
+    Args:
+        llm: JarvisLLM instance
+        dashboard: SystemDashboard instance  
+        tts: TTSEngine instance or None
+    """
+    if not HAS_PYQT:
+        raise ImportError("PyQt6 is required. Install with: pip install PyQt6")
+    
+    app = QApplication(sys.argv)
+    app.setStyle("Fusion")
+    
+    # Set application font
+    font = QFont("Segoe UI", 10)
+    app.setFont(font)
+    
+    # Create window with core integration
+    window = JARVISMainWindow()
+    
+    # Store core references
+    window.llm = llm
+    window.dashboard = dashboard
+    window.tts = tts
+    
+    # Override process_command to use real LLM
+    def process_with_core(text: str) -> str:
+        """Process using real JARVIS core."""
+        try:
+            # First check built-in commands
+            from jarvis.main import _handle_built_in_command
+            if _handle_built_in_command(text, tts, llm, dashboard):
+                return "Command executed."
+            
+            # Use LLM for other queries
+            response = llm.chat(text)
+            return response
+        except Exception as e:
+            return f"Error: {e}"
+    
+    window.process_command = process_with_core
+    
+    # Stop dashboard monitoring when GUI closes
+    def on_close():
+        dashboard.stop_monitoring()
+    
+    app.aboutToQuit.connect(on_close)
+    
+    window.show()
+    
+    # Welcome message
+    if tts:
+        tts.speak_sync("JARVIS GUI mode activated. Systems online.")
     
     sys.exit(app.exec())
 
