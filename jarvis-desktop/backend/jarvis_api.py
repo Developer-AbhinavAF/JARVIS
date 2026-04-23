@@ -19,16 +19,17 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Back
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-# Add parent directory to path to import jarvis modules
-jarvis_path = Path(__file__).parent.parent.parent / "jarvis"
-sys.path.insert(0, str(jarvis_path))
-
-# Configure logging
+# Configure logging first
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Add JARVIS root directory to path to import jarvis modules
+jarvis_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(jarvis_root))
+logger.info(f"Added to Python path: {jarvis_root}")
 
 # ============== DATA MODELS ==============
 
@@ -98,7 +99,7 @@ class JarvisDesktopCore:
                 
                 # Import JARVIS modules
                 from jarvis.llm import JarvisLLM
-                from jarvis.automation import Automation
+                from jarvis.automation import Scheduler
                 from jarvis.memory import memory
                 from jarvis.system_control import SYSTEM_CONTROL_REGISTRY
                 from jarvis.dashboard import SystemDashboard
@@ -107,7 +108,7 @@ class JarvisDesktopCore:
                 # Initialize components
                 self.dashboard = SystemDashboard()
                 self.llm = JarvisLLM()
-                self.automation = Automation()
+                self.automation = Scheduler()
                 self.memory = memory
                 self.system_control = SYSTEM_CONTROL_REGISTRY
                 
@@ -315,9 +316,10 @@ class JarvisDesktopCore:
         # Screenshot
         if any(p in q for p in ["screenshot", "capture screen", "take screenshot"]):
             try:
-                from jarvis.automation import Automation
-                auto = Automation()
-                path = auto.capture_screenshot()
+                import pyautogui
+                from datetime import datetime
+                path = f"screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                pyautogui.screenshot(path)
                 return {"text": f"📸 Screenshot saved to: {path}", "actions": [{"type": "screenshot", "path": path}]}
             except Exception as e:
                 return {"text": f"Failed to capture screenshot: {e}", "actions": []}
@@ -506,7 +508,11 @@ What would you like to do?""",
     def get_system_stats(self) -> Dict[str, Any]:
         """Get current system statistics"""
         if self.dashboard:
-            return self.dashboard.get_current_stats()
+            stats = self.dashboard.get_quick_status()
+            # Convert to proper format if needed
+            if isinstance(stats, str):
+                return self._get_default_stats()
+            return stats
         return self._get_default_stats()
     
     def _get_default_stats(self) -> Dict[str, Any]:

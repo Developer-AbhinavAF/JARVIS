@@ -35,23 +35,21 @@ body {
   border-color: rgba(255, 255, 255, 0.15);
 }
 
-/* Custom scrollbar */
+/* Hide ALL scrollbars globally */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* Custom scrollbar - hidden by default, can enable per-element */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  display: none;
 }
 
 /* Neon glow effects */
@@ -155,3 +153,115 @@ body {
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
+
+/* Smooth scroll for messages */
+.scroll-smooth {
+  scroll-behavior: smooth;
+}
+
+/* Hide scrollbar but keep functionality */
+.scrollbar-hide {
+  display: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Thin scrollbar variant - hidden by default */
+.scrollbar-thin {
+  scrollbar-width: none;
+}
+.scrollbar-thin::-webkit-scrollbar {
+  display: none;
+}
+
+/* Enable scrollbar utility - when you want scrollbars */
+.scrollbar-visible {
+  scrollbar-width: thin;
+  -ms-overflow-style: auto;
+}
+.scrollbar-visible::-webkit-scrollbar {
+  display: block;
+  width: 6px;
+  height: 6px;
+}
+.scrollbar-visible::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-visible::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+.scrollbar-visible::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Message bubble animations */
+@keyframes messagePop {
+  0% {
+    opacity: 0;
+    transform: scale(0.9) translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.message-pop {
+  animation: messagePop 0.3s ease-out forwards;
+}
+
+/* Stagger children animation */
+.stagger-children > * {
+  opacity: 0;
+  animation: messagePop 0.3s ease-out forwards;
+}
+.stagger-children > *:nth-child(1) { animation-delay: 0.05s; }
+.stagger-children > *:nth-child(2) { animation-delay: 0.1s; }
+.stagger-children > *:nth-child(3) { animation-delay: 0.15s; }
+.stagger-children > *:nth-child(4) { animation-delay: 0.2s; }
+.stagger-children > *:nth-child(5) { animation-delay: 0.25s; }
+
+/* Float animation for indicators */
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+.animate-float {
+  animation: float 2s ease-in-out infinite;
+}
+
+/* Pulse glow animation */
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 5px rgba(255, 110, 199, 0.3); }
+  50% { box-shadow: 0 0 20px rgba(255, 110, 199, 0.6); }
+}
+.animate-pulse-glow {
+  animation: pulseGlow 2s ease-in-out infinite;
+}
+
+/* Shimmer effect for loading */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.shimmer {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+/* Wave animation for voice indicator */
+@keyframes wave {
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
+}
+
+/* Speaking wave bars */
+.speaking-wave {
+  animation: wave 0.8s ease-in-out infinite;
+}
+.speaking-wave:nth-child(2) { animation-delay: 0.1s; }
+.speaking-wave:nth-child(3) { animation-delay: 0.2s; }
+.speaking-wave:nth-child(4) { animation-delay: 0.3s; }

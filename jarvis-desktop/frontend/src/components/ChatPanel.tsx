@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Mic, Copy, Volume2, Trash2, CheckSquare, StickyNote, Search, ExternalLink, Terminal, AlertCircle } from 'lucide-react';
+import { Send, Mic, Copy, Volume2, Trash2, CheckSquare, StickyNote, Search, ExternalLink, Terminal, AlertCircle, Paperclip, Image, X, FileText } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { useChat } from '@/hooks/useApi';
 import type { Message } from '@/types';
@@ -19,13 +19,14 @@ interface ChatResponse {
 }
 
 export default function ChatPanel() {
-  const { messages, addMessage, deleteMessage, isTyping, setIsTyping, mode } = useStore();
-  const [input, setInput] = useState('');
+  const { messages, addMessage, deleteMessage, isTyping, setIsTyping, mode, input, setInput } = useStore();
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [uploadedFile, setUploadedFile] = useState<{ name: string; type: string; data: string } | null>(null);
   const { sendMessage, loading } = useChat();
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -39,21 +40,66 @@ export default function ChatPanel() {
     inputRef.current?.focus();
   }, []);
 
+  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Check file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setError('File too large. Max size is 5MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      setUploadedFile({
+        name: file.name,
+        type: file.type,
+        data: base64.split(',')[1], // Remove data URL prefix
+      });
+    };
+    reader.readAsDataURL(file);
+  }, []);
+
   const handleSend = useCallback(async () => {
-    if (!input.trim() || loading) return;
+    if ((!input.trim() && !uploadedFile) || loading) return;
 
     const userMessage = input.trim();
     setInput('');
     setError(null);
     setSuggestions([]);
 
-    // Add user message
-    addMessage({ role: 'user', content: userMessage });
+    // Add user message with file attachment indicator
+    const messageContent = uploadedFile 
+      ? `${userMessage}${userMessage ? '\n\n' : ''}[Attached: ${uploadedFile.name}]`
+      : userMessage;
+    
+    addMessage({ role: 'user', content: messageContent });
     setIsTyping(true);
 
     try {
-      // Send to API - use real JARVIS AI
-      const response: ChatResponse = await sendMessage(userMessage);
+      // Send to API with file if attached
+      let response: ChatResponse;
+      if (uploadedFile) {
+        // Send with file
+        const formData = new FormData();
+        formData.append('message', userMessage || `Analyze this ${uploadedFile.type.includes('image') ? 'image' : 'file'}`);
+        formData.append('session_id', 'default');
+        formData.append('file_name', uploadedFile.name);
+        formData.append('file_type', uploadedFile.type);
+        formData.append('file_data', uploadedFile.data);
+        
+        const res = await fetch('http://localhost:8001/api/chat', {
+          method: 'POST',
+          body: formData,
+        });
+        response = await res.json();
+        setUploadedFile(null);
+      } else {
+        // Normal text message
+        response = await sendMessage(userMessage);
+      }
       
       // Execute any actions returned by JARVIS
       if (response.actions && response.actions.length > 0) {
@@ -114,6 +160,47 @@ export default function ChatPanel() {
     }
   };
 
+  const handleQuickAction = (command: string) => {
+    setInput(command);
+    // Auto-send after a brief delay
+    setTimeout(() => {
+      // Need to use the command directly since input state update is async
+      if (command.trim()) {
+        const userMessage = command.trim();
+        setInput('');
+        setError(null);
+        setSuggestions([]);
+
+        // Add user message
+        addMessage({ role: 'user', content: userMessage });
+        setIsTyping(true);
+
+        // Send to API
+        sendMessage(userMessage)
+          .then((response: ChatResponse) => {
+            addMessage({
+              role: 'assistant',
+              content: response.response,
+              actions: response.actions,
+            });
+
+            if (response.suggestions) {
+              setSuggestions(response.suggestions);
+            }
+
+            // Execute actions
+            executeActions(response.actions);
+          })
+          .catch((err) => {
+            setError(err.message || 'Failed to send message');
+          })
+          .finally(() => {
+            setIsTyping(false);
+          });
+      }
+    }, 100);
+  };
+
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
   };
@@ -128,24 +215,43 @@ export default function ChatPanel() {
   };
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
-      {/* Messages Area */}
+    <div className="flex-1 flex flex-col h-full overflow-hidden">
+      {/* Messages Area - Fixed scrolling */}
       <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto p-6 space-y-4"
+        style={{ scrollBehavior: 'smooth' }}
       >
-        <AnimatePresence initial={false}>
+        <AnimatePresence initial={false} mode="popLayout">
           {messages.map((message, index) => (
             <MessageBubble
               key={message.id}
               message={message}
               isFirst={index === 0}
+              index={index}
               onCopy={() => copyToClipboard(message.content)}
               onSpeak={() => speakText(message.content)}
               onDelete={() => deleteMessage(message.id)}
             />
           ))}
         </AnimatePresence>
+
+        {/* Scroll to bottom indicator */}
+        {messages.length > 5 && (
+          <motion.button
+            initial={{ opacity: 0, scale: 0 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0 }}
+            onClick={() => {
+              scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+            }}
+            className="fixed bottom-32 right-8 p-2 rounded-full bg-jarvis-accentPink/80 text-white shadow-lg hover:bg-jarvis-accentPink transition-colors z-10"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 5v14M19 12l-7 7-7-7" />
+            </svg>
+          </motion.button>
+        )}
 
         {/* Typing Indicator */}
         {isTyping && (
@@ -204,20 +310,34 @@ export default function ChatPanel() {
       )}
 
       {/* Quick Actions */}
-      <div className="px-6 py-3 flex gap-2 overflow-x-auto">
+      <motion.div 
+        className="px-6 py-3 flex gap-2 overflow-x-auto"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
+      >
         {[
-          { label: 'Take Screenshot', icon: Terminal, command: 'take screenshot' },
-          { label: 'Open YouTube', icon: ExternalLink, command: 'open youtube' },
-          { label: 'System Status', icon: Terminal, command: 'system status' },
-          { label: 'Daily Briefing', icon: CheckSquare, command: 'daily briefing' },
-        ].map((action) => {
+          { label: 'Screenshot', icon: Terminal, command: 'take screenshot' },
+          { label: 'YouTube', icon: ExternalLink, command: 'open youtube' },
+          { label: 'System', icon: Terminal, command: 'system status' },
+          { label: 'Network', icon: Terminal, command: 'network status' },
+          { label: 'Calculator', icon: Terminal, command: 'calculate 15 * 23' },
+          { label: 'Notepad', icon: Terminal, command: 'open notepad' },
+          { label: 'Joke', icon: Terminal, command: 'tell me a joke' },
+          { label: 'Quote', icon: Terminal, command: 'quote' },
+          { label: 'Fact', icon: Terminal, command: 'random fact' },
+          { label: 'Weather', icon: Terminal, command: 'weather' },
+        ].map((action, idx) => {
           const Icon = action.icon;
           return (
             <motion.button
               key={action.label}
-              className="px-4 py-2 rounded-lg glass-panel text-sm text-jarvis-textMuted hover:text-jarvis-text whitespace-nowrap transition-all flex items-center gap-2"
-              whileHover={{ scale: 1.02, backgroundColor: 'rgba(255,255,255,0.08)' }}
-              whileTap={{ scale: 0.98 }}
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: idx * 0.05 }}
+              className="px-4 py-2 rounded-lg glass-panel text-sm text-jarvis-textMuted hover:text-jarvis-text whitespace-nowrap transition-all flex items-center gap-2 hover:shadow-lg hover:shadow-jarvis-accentPink/10"
+              whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.1)' }}
+              whileTap={{ scale: 0.95 }}
               onClick={() => {
                 setInput(action.command);
                 handleSend();
@@ -228,7 +348,7 @@ export default function ChatPanel() {
             </motion.button>
           );
         })}
-      </div>
+      </motion.div>
 
       {/* Error Banner */}
       {error && (
@@ -251,6 +371,36 @@ export default function ChatPanel() {
 
       {/* Input Area */}
       <div className="p-4 border-t border-white/10">
+        {/* File Upload Preview */}
+        <AnimatePresence>
+          {uploadedFile && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="mb-3 flex items-center gap-2 p-2 rounded-xl bg-jarvis-accentPink/10 border border-jarvis-accentPink/30"
+            >
+              <div className="p-2 rounded-lg bg-jarvis-accentPink/20 text-jarvis-accentPink">
+                {uploadedFile.type.startsWith('image/') ? <Image size={18} /> : <FileText size={18} />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-jarvis-text truncate">{uploadedFile.name}</p>
+                <p className="text-xs text-jarvis-textMuted">
+                  {uploadedFile.type.startsWith('image/') ? 'Image ready for analysis' : 'File attached'}
+                </p>
+              </div>
+              <motion.button
+                onClick={() => setUploadedFile(null)}
+                className="p-1.5 rounded-lg hover:bg-white/10 text-jarvis-textMuted hover:text-red-400 transition-colors"
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+              >
+                <X size={16} />
+              </motion.button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <div className="flex items-center gap-3 glass-panel rounded-2xl p-2">
           {/* Mode Indicator */}
           <div
@@ -265,6 +415,31 @@ export default function ChatPanel() {
             )}
           </div>
 
+          {/* Hidden File Input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,.pdf,.txt,.doc,.docx"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
+
+          {/* File Upload Button */}
+          <motion.button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={loading || !!uploadedFile}
+            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+              uploadedFile
+                ? 'bg-jarvis-accentPink/30 text-jarvis-accentPink'
+                : 'bg-white/5 text-jarvis-textMuted hover:text-jarvis-text hover:bg-white/10'
+            }`}
+            whileHover={!uploadedFile ? { scale: 1.05 } : {}}
+            whileTap={!uploadedFile ? { scale: 0.95 } : {}}
+            title="Upload file or image"
+          >
+            <Paperclip size={18} />
+          </motion.button>
+
           {/* Text Input */}
           <input
             ref={inputRef}
@@ -272,7 +447,7 @@ export default function ChatPanel() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Type your command..."
+            placeholder={uploadedFile ? "Ask about the file... (or just send)" : "Type your command..."}
             className="flex-1 bg-transparent text-jarvis-text placeholder-jarvis-textMuted outline-none text-sm"
             disabled={loading}
           />
@@ -280,16 +455,16 @@ export default function ChatPanel() {
           {/* Send Button */}
           <motion.button
             onClick={handleSend}
-            disabled={!input.trim() || loading}
+            disabled={(!input.trim() && !uploadedFile) || loading}
             className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-              input.trim() && !loading
+              (input.trim() || uploadedFile) && !loading
                 ? 'bg-gradient-to-r from-jarvis-accentPink to-jarvis-accentRed text-white'
                 : 'bg-white/5 text-jarvis-textMuted'
             }`}
-            whileHover={input.trim() && !loading ? { scale: 1.05 } : {}}
-            whileTap={input.trim() && !loading ? { scale: 0.95 } : {}}
+            whileHover={(input.trim() || uploadedFile) && !loading ? { scale: 1.05 } : {}}
+            whileTap={(input.trim() || uploadedFile) && !loading ? { scale: 0.95 } : {}}
           >
-            {mode === 'speech' && !input.trim() ? (
+            {mode === 'speech' && !input.trim() && !uploadedFile ? (
               <Mic size={18} />
             ) : (
               <Send size={18} />
@@ -298,7 +473,7 @@ export default function ChatPanel() {
         </div>
 
         <p className="text-xs text-jarvis-textMuted mt-2 text-center">
-          JARVIS is fully functional • Try: "open chrome", "system status", "add todo buy milk"
+          JARVIS is fully functional • Try: "open chrome", "system status", "add todo buy milk" • Upload images for AI analysis
         </p>
       </div>
     </div>
@@ -308,6 +483,7 @@ export default function ChatPanel() {
 interface MessageBubbleProps {
   message: Message;
   isFirst: boolean;
+  index: number;
   onCopy: () => void;
   onSpeak: () => void;
   onDelete: () => void;
@@ -316,24 +492,39 @@ interface MessageBubbleProps {
 function MessageBubble({
   message,
   isFirst,
+  index,
   onCopy,
   onSpeak,
   onDelete,
 }: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const [showActions, setShowActions] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -20 }}
-      transition={{ duration: 0.3 }}
+      layout
+      initial={{ opacity: 0, y: 20, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -20, scale: 0.95 }}
+      transition={{ 
+        duration: 0.3, 
+        delay: index * 0.05,
+        layout: { duration: 0.2 }
+      }}
       className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
-      onMouseEnter={() => setShowActions(true)}
-      onMouseLeave={() => setShowActions(false)}
+      onMouseEnter={() => { setShowActions(true); setIsHovered(true); }}
+      onMouseLeave={() => { setShowActions(false); setIsHovered(false); }}
     >
-      <div
+      <motion.div
+        animate={{
+          boxShadow: isHovered 
+            ? isUser 
+              ? '0 8px 30px rgba(239, 68, 68, 0.3)' 
+              : '0 8px 30px rgba(255, 255, 255, 0.1)'
+            : '0 0px 0px rgba(0, 0, 0, 0)'
+        }}
+        transition={{ duration: 0.2 }}
         className={`max-w-[80%] rounded-2xl p-4 relative ${
           isUser
             ? 'bg-gradient-to-r from-jarvis-accentRed to-red-600 text-white rounded-br-md'
@@ -368,6 +559,7 @@ function MessageBubble({
                     {action.type === 'volume' && `🔊 ${action.action}`}
                     {action.type === 'system_status' && '📊 System Status'}
                     {action.type === 'daily_briefing' && '📅 Briefing'}
+                    {action.type === 'file_analyzed' && '📄 File Analyzed'}
                   </span>
                 ))}
               </div>
@@ -414,7 +606,10 @@ function MessageBubble({
         </AnimatePresence>
 
         {/* Timestamp */}
-        <span
+        <motion.span
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.2 }}
           className={`text-[10px] mt-2 block ${
             isUser ? 'text-white/70' : 'text-jarvis-textMuted'
           }`}
@@ -423,8 +618,8 @@ function MessageBubble({
             hour: '2-digit',
             minute: '2-digit',
           })}
-        </span>
-      </div>
+        </motion.span>
+      </motion.div>
     </motion.div>
   );
 }

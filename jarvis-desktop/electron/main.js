@@ -32,8 +32,8 @@ const FRONTEND_PATH = isDev
   : path.join(__dirname, '../frontend/dist/index.html');
 
 const BACKEND_PATH = isDev
-  ? path.join(__dirname, '../backend/main.py')
-  : path.join(process.resourcesPath, 'backend/main.py');
+  ? path.join(__dirname, '../backend/jarvis_api.py')
+  : path.join(process.resourcesPath, 'backend/jarvis_api.py');
 
 // ============== WINDOW MANAGEMENT ==============
 
@@ -132,12 +132,19 @@ function createWindow() {
 function startBackend() {
   log.info('Starting Python backend...');
 
-  const pythonExecutable = process.platform === 'win32' ? 'python' : 'python3';
+  // Use virtual environment Python
+  const venvPath = path.join(__dirname, '../../.venv');
+  const pythonExecutable = process.platform === 'win32' 
+    ? path.join(venvPath, 'Scripts', 'python.exe')
+    : path.join(venvPath, 'bin', 'python');
+  
+  log.info(`Using Python: ${pythonExecutable}`);
   
   backendProcess = spawn(pythonExecutable, [BACKEND_PATH], {
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: false,
-    windowsHide: true
+    windowsHide: true,
+    cwd: path.dirname(BACKEND_PATH)
   });
 
   backendProcess.stdout.on('data', (data) => {

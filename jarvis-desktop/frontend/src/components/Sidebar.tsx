@@ -8,6 +8,7 @@ import {
   Settings,
   HelpCircle,
   Plus,
+  Terminal,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 
@@ -16,6 +17,7 @@ const navItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'pc-control', label: 'PC Control', icon: Monitor },
   { id: 'memory', label: 'Memory Center', icon: Brain },
+  { id: 'logs', label: 'System Logs', icon: Terminal },
   { id: 'assistant', label: 'Smart Assistant', icon: Sparkles },
   { id: 'plugins', label: 'Plugins', icon: Plus, badge: 'NEW' },
   { id: 'settings', label: 'Settings', icon: Settings },

@@ -34,6 +34,10 @@ interface StoreState {
   activeTab: string;
   setActiveTab: (tab: string) => void;
 
+  // Input for chat
+  input: string;
+  setInput: (text: string) => void;
+
   // Memory
   todos: Todo[];
   notes: Note[];
@@ -166,6 +170,10 @@ export const useStore = create<StoreState>()(
       // Navigation
       activeTab: 'home',
       setActiveTab: (tab) => set({ activeTab: tab }),
+
+      // Input for chat
+      input: '',
+      setInput: (text) => set({ input: text }),
 
       // Memory
       todos: [],
