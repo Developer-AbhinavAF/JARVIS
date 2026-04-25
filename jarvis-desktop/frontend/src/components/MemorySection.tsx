@@ -16,7 +16,6 @@ import {
   Filter,
   ChevronDown,
   ChevronUp,
-  Archive,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import type { Todo, Note, Reminder } from '@/types';
@@ -24,11 +23,11 @@ import type { Todo, Note, Reminder } from '@/types';
 type TabType = 'todos' | 'notes' | 'reminders';
 
 export default function MemorySection() {
-  const { todos, notes, reminders, addTodo, toggleTodo, deleteTodo, addNote, updateNote, deleteNote, addReminder, deleteReminder } = useStore();
+  const { todos, notes, reminders } = useStore();
   const [activeTab, setActiveTab] = useState<TabType>('todos');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const tabs = [
+  const tabs: { id: TabType; label: string; icon: React.ElementType; count: number }[] = [
     { id: 'todos', label: 'To-Do List', icon: CheckSquare, count: todos.filter(t => !t.completed).length },
     { id: 'notes', label: 'Notes', icon: StickyNote, count: notes.length },
     { id: 'reminders', label: 'Reminders', icon: Bell, count: reminders.length },
@@ -128,7 +127,7 @@ function TodosView({ todos, searchQuery }: { todos: Todo[]; searchQuery: string 
   const handleAddTodo = (e: React.FormEvent) => {
     e.preventDefault();
     if (newTodo.trim()) {
-      addTodo({ text: newTodo.trim(), completed: false });
+      addTodo({ text: newTodo.trim(), completed: false, priority: 'medium' });
       setNewTodo('');
     }
   };

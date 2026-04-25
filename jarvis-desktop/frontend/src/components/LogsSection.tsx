@@ -1,33 +1,29 @@
-import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useEffect, useRef } from 'react';
+import { motion } from 'framer-motion';
 import {
   Terminal,
   Trash2,
   Download,
-  Filter,
   Search,
-  AlertCircle,
-  CheckCircle,
-  Info,
-  X,
-  Clock,
-  RefreshCw,
-  Cpu,
-  Activity,
-  MessageSquare,
-  Volume2,
-  Monitor,
-  Power,
+  Pause,
+  Play,
 } from 'lucide-react';
-import { useStore } from '@/store/useStore';
+
+// Backend log format from terminal
+interface BackendLog {
+  timestamp: string;
+  level: string;
+  logger: string;
+  message: string;
+  raw_message?: string;
+}
 
 interface LogEntry {
   id: string;
-  timestamp: number;
-  level: 'info' | 'success' | 'warning' | 'error';
-  category: 'system' | 'voice' | 'chat' | 'control' | 'network';
+  timestamp: string;
+  level: string;
+  logger: string;
   message: string;
-  details?: string;
 }
 
 export default function LogsSection() {
@@ -35,30 +31,42 @@ export default function LogsSection() {
   const [filter, setFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isConnected, setIsConnected] = useState(false);
-  const { systemStats } = useStore();
+  const [isPaused, setIsPaused] = useState(false);
+  const logsEndRef = useRef<HTMLDivElement>(null);
+  const wsRef = useRef<WebSocket | null>(null);
 
-  // Connect to WebSocket for real-time logs
+  // Auto-scroll to bottom
   useEffect(() => {
-    const ws = new WebSocket('ws://localhost:8001/ws');
+    if (!isPaused && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logs, isPaused]);
+
+  // Connect to WebSocket for real-time terminal logs
+  useEffect(() => {
+    const ws = new WebSocket('ws://localhost:8001/ws/logs');
+    wsRef.current = ws;
     
     ws.onopen = () => {
       setIsConnected(true);
-      addLog('system', 'Connected to JARVIS', 'info');
-      
-      // Request initial stats
-      ws.send(JSON.stringify({ type: 'get_stats' }));
     };
     
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
         
-        if (data.type === 'chat_response') {
-          addLog('chat', `AI: ${data.data?.response?.substring(0, 50)}...`, 'info');
-        } else if (data.type === 'system_stats') {
-          // Only log significant changes
-          if (data.payload?.cpu?.usage > 80) {
-            addLog('system', `High CPU usage: ${data.payload.cpu.usage}%`, 'warning');
+        if (data.type === 'log' && data.data) {
+          const backendLog: BackendLog = data.data;
+          const newLog: LogEntry = {
+            id: Date.now().toString() + Math.random(),
+            timestamp: backendLog.timestamp,
+            level: backendLog.level,
+            logger: backendLog.logger,
+            message: backendLog.message,
+          };
+          
+          if (!isPaused) {
+            setLogs(prev => [...prev, newLog].slice(-1000)); // Keep last 1000 logs
           }
         }
       } catch (e) {
@@ -68,48 +76,45 @@ export default function LogsSection() {
     
     ws.onclose = () => {
       setIsConnected(false);
-      addLog('system', 'Disconnected from JARVIS', 'warning');
     };
     
     ws.onerror = () => {
-      addLog('system', 'Connection error', 'error');
+      setIsConnected(false);
     };
-
-    // Add some initial logs
-    addLog('system', 'JARVIS Desktop initialized', 'info');
-    addLog('voice', 'Speech recognition ready', 'success');
     
     return () => {
       ws.close();
     };
-  }, []);
+  }, [isPaused]);
 
-  const addLog = (category: LogEntry['category'], message: string, level: LogEntry['level']) => {
-    const newLog: LogEntry = {
-      id: Date.now().toString() + Math.random(),
-      timestamp: Date.now(),
-      level,
-      category,
-      message,
-    };
-    setLogs(prev => [newLog, ...prev].slice(0, 500)); // Keep last 500 logs
-  };
-
-  // Expose addLog globally for other components
+  // Also fetch initial logs via REST API
   useEffect(() => {
-    (window as any).jarvisLog = (category: string, message: string, level: string = 'info') => {
-      addLog(category as any, message, level as any);
-    };
+    fetch('http://localhost:8001/api/logs?limit=200')
+      .then(res => res.json())
+      .then(data => {
+        if (data.logs && Array.isArray(data.logs)) {
+          const initialLogs: LogEntry[] = data.logs.map((log: BackendLog, index: number) => ({
+            id: `initial-${index}`,
+            timestamp: log.timestamp,
+            level: log.level,
+            logger: log.logger,
+            message: log.message,
+          }));
+          setLogs(prev => [...initialLogs, ...prev].slice(-1000));
+        }
+      })
+      .catch(() => {
+        // Silent fail - WebSocket will handle live logs
+      });
   }, []);
 
   const clearLogs = () => {
     setLogs([]);
-    addLog('system', 'Logs cleared', 'info');
   };
 
   const downloadLogs = () => {
     const logText = logs
-      .map(log => `[${new Date(log.timestamp).toLocaleString()}] [${log.level.toUpperCase()}] [${log.category}] ${log.message}`)
+      .map(log => `${log.message}`)
       .join('\n');
     
     const blob = new Blob([logText], { type: 'text/plain' });
@@ -119,42 +124,36 @@ export default function LogsSection() {
     a.download = `jarvis-logs-${new Date().toISOString().split('T')[0]}.txt`;
     a.click();
     URL.revokeObjectURL(url);
-    
-    addLog('system', 'Logs downloaded', 'success');
   };
 
   const filteredLogs = logs.filter(log => {
-    const matchesFilter = filter === 'all' || log.category === filter || log.level === filter;
+    const matchesFilter = filter === 'all' || 
+                          (filter === 'error' && log.level === 'ERROR') ||
+                          (filter === 'warning' && log.level === 'WARNING') ||
+                          (filter === 'info' && log.level === 'INFO') ||
+                          (filter === 'chat' && log.message.includes('Chat request')) ||
+                          (filter === 'system' && log.message.includes('System'));
     const matchesSearch = log.message.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          log.category.toLowerCase().includes(searchQuery.toLowerCase());
+                          log.logger.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesFilter && matchesSearch;
   });
 
-  const getCategoryIcon = (category: string) => {
-    switch (category) {
-      case 'system': return Cpu;
-      case 'voice': return Volume2;
-      case 'chat': return MessageSquare;
-      case 'control': return Monitor;
-      case 'network': return Activity;
-      default: return Info;
-    }
-  };
-
+  // Terminal color coding for log levels
   const getLevelColor = (level: string) => {
     switch (level) {
-      case 'success': return 'text-green-400 bg-green-400/10 border-green-400/20';
-      case 'warning': return 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20';
-      case 'error': return 'text-red-400 bg-red-400/10 border-red-400/20';
-      default: return 'text-blue-400 bg-blue-400/10 border-blue-400/20';
+      case 'ERROR': return 'text-red-400';
+      case 'WARNING': return 'text-yellow-400';
+      case 'INFO': return 'text-green-400';
+      case 'DEBUG': return 'text-blue-400';
+      default: return 'text-gray-400';
     }
   };
 
   const stats = {
     total: logs.length,
-    errors: logs.filter(l => l.level === 'error').length,
-    warnings: logs.filter(l => l.level === 'warning').length,
-    info: logs.filter(l => l.level === 'info').length,
+    errors: logs.filter(l => l.level === 'ERROR').length,
+    warnings: logs.filter(l => l.level === 'WARNING').length,
+    info: logs.filter(l => l.level === 'INFO').length,
   };
 
   return (
@@ -175,22 +174,31 @@ export default function LogsSection() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-4 gap-3 mb-4">
+        <div className="grid grid-cols-5 gap-3 mb-4">
           <div className="glass-panel rounded-lg p-3">
             <div className="text-2xl font-bold text-jarvis-text">{stats.total}</div>
-            <div className="text-xs text-jarvis-textMuted">Total Logs</div>
+            <div className="text-xs text-jarvis-textMuted">Total</div>
           </div>
           <div className="glass-panel rounded-lg p-3">
             <div className="text-2xl font-bold text-green-400">{stats.info}</div>
-            <div className="text-xs text-jarvis-textMuted">Info</div>
+            <div className="text-xs text-jarvis-textMuted">INFO</div>
           </div>
           <div className="glass-panel rounded-lg p-3">
             <div className="text-2xl font-bold text-yellow-400">{stats.warnings}</div>
-            <div className="text-xs text-jarvis-textMuted">Warnings</div>
+            <div className="text-xs text-jarvis-textMuted">WARNING</div>
           </div>
           <div className="glass-panel rounded-lg p-3">
             <div className="text-2xl font-bold text-red-400">{stats.errors}</div>
-            <div className="text-xs text-jarvis-textMuted">Errors</div>
+            <div className="text-xs text-jarvis-textMuted">ERROR</div>
+          </div>
+          <div className="glass-panel rounded-lg p-3 flex items-center justify-center">
+            <button
+              onClick={() => setIsPaused(!isPaused)}
+              className={`p-2 rounded-lg transition-colors ${isPaused ? 'bg-yellow-500/20 text-yellow-400' : 'bg-green-500/20 text-green-400'}`}
+              title={isPaused ? 'Resume' : 'Pause'}
+            >
+              {isPaused ? <Play size={18} /> : <Pause size={18} />}
+            </button>
           </div>
         </div>
 
@@ -214,14 +222,12 @@ export default function LogsSection() {
             onChange={(e) => setFilter(e.target.value)}
             className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-jarvis-text focus:outline-none focus:border-jarvis-accentPink"
           >
-            <option value="all">All Categories</option>
+            <option value="all">All Logs</option>
+            <option value="chat">Chat Requests</option>
             <option value="system">System</option>
-            <option value="voice">Voice</option>
-            <option value="chat">Chat</option>
-            <option value="control">Control</option>
-            <option value="info">Info Level</option>
-            <option value="warning">Warning Level</option>
-            <option value="error">Error Level</option>
+            <option value="info">INFO Level</option>
+            <option value="warning">WARNING Level</option>
+            <option value="error">ERROR Level</option>
           </select>
 
           {/* Actions */}
@@ -242,68 +248,66 @@ export default function LogsSection() {
         </div>
       </div>
 
-      {/* Logs List */}
-      <div className="flex-1 overflow-y-auto p-4">
+      {/* Terminal Logs Display */}
+      <div className="flex-1 overflow-y-auto p-4 font-mono text-sm bg-black/40">
         {filteredLogs.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-jarvis-textMuted">
             <Terminal size={48} className="mb-4 opacity-50" />
             <p>No logs to display</p>
-            <p className="text-sm mt-1">Logs will appear here as you use JARVIS</p>
+            <p className="text-sm mt-1">Waiting for backend logs...</p>
           </div>
         ) : (
-          <div className="space-y-2">
-            <AnimatePresence>
-              {filteredLogs.map((log) => {
-                const Icon = getCategoryIcon(log.category);
-                return (
-                  <motion.div
-                    key={log.id}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: 20 }}
-                    className={`p-3 rounded-lg border ${getLevelColor(log.level)} flex items-start gap-3`}
-                  >
-                    <div className="p-1.5 rounded bg-white/10">
-                      <Icon size={14} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs font-mono opacity-70">
-                          {new Date(log.timestamp).toLocaleTimeString()}
-                        </span>
-                        <span className="text-[10px] uppercase px-2 py-0.5 rounded bg-white/10">
-                          {log.category}
-                        </span>
-                        {log.level !== 'info' && (
-                          <span className="text-[10px] uppercase px-2 py-0.5 rounded bg-white/20">
-                            {log.level}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-sm">{log.message}</p>
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </AnimatePresence>
+          <div className="space-y-0.5">
+            {filteredLogs.map((log) => {
+              // Format like terminal: INFO:__main__:Chat request: message='...'
+              const isChatRequest = log.message.includes('Chat request');
+              const isHttpRequest = log.message.includes('127.0.0.1') || log.message.includes('POST') || log.message.includes('HTTP');
+              
+              return (
+                <motion.div
+                  key={log.id}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className={`whitespace-pre-wrap break-all ${
+                    isChatRequest ? 'text-green-400' : 
+                    isHttpRequest ? 'text-cyan-400' :
+                    log.level === 'ERROR' ? 'text-red-400' :
+                    log.level === 'WARNING' ? 'text-yellow-400' :
+                    'text-gray-300'
+                  }`}
+                  style={{ fontFamily: 'Consolas, Monaco, "Courier New", monospace' }}
+                >
+                  {/* Terminal format like: INFO:__main__:Chat request: message='...' */}
+                  {isHttpRequest ? (
+                    // Indent HTTP request logs
+                    <span className="pl-0">{log.message}</span>
+                  ) : (
+                    // Standard log format
+                    <span>
+                      <span className={getLevelColor(log.level)}>{log.level}:</span>
+                      <span className="text-gray-500">{log.logger}:</span>
+                      <span className="text-gray-300">{log.message}</span>
+                    </span>
+                  )}
+                </motion.div>
+              );
+            })}
+            <div ref={logsEndRef} />
           </div>
         )}
       </div>
 
       {/* Footer */}
-      <div className="p-3 border-t border-white/10 flex items-center justify-between text-xs text-jarvis-textMuted">
+      <div className="p-3 border-t border-white/10 flex items-center justify-between text-xs text-jarvis-textMuted font-mono">
         <div className="flex items-center gap-4">
-          <span>Auto-refresh: ON</span>
-          <span>Max entries: 500</span>
+          <span className={isConnected ? 'text-green-400' : 'text-red-400'}>
+            {isConnected ? '● Connected' : '● Disconnected'}
+          </span>
+          <span>Buffer: {logs.length}/1000</span>
+          {isPaused && <span className="text-yellow-400">⏸ PAUSED</span>}
         </div>
         <div className="flex items-center gap-2">
-          <span>Last updated: {new Date().toLocaleTimeString()}</span>
-          <button
-            onClick={() => window.location.reload()}
-            className="p-1 hover:bg-white/10 rounded"
-          >
-            <RefreshCw size={14} />
-          </button>
+          <span>Real-time terminal logs</span>
         </div>
       </div>
     </div>

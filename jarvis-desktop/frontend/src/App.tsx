@@ -18,7 +18,7 @@ import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { Mic, MicOff, Send } from 'lucide-react';
 
 function App() {
-  const { mode, isListening, setIsListening, setSystemStats, setIsConnected, activeTab, addMessage, setIsTyping, mode: currentMode, toggleMode, messages } = useStore();
+  const { setIsListening, setSystemStats, setIsConnected, activeTab, addMessage, setIsTyping, mode: currentMode, toggleMode } = useStore();
   const { lastMessage, isConnected } = useWebSocket('ws://localhost:8001/ws');
   const { isListening: speechListening, transcript, interimTranscript, startListening, stopListening, resetTranscript, isSupported, error: speechError } = useSpeechRecognition();
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -165,14 +165,14 @@ function App() {
     }
   }, [currentMode, isSupported, startListening, stopListening, toggleMode]);
 
-  // Handle speech transcript completion
+  // Handle speech transcript completion - ONLY in speech mode
   useEffect(() => {
-    if (transcript && !speechListening && !isSpeaking) {
+    if (currentMode === 'speech' && transcript && !speechListening && !isSpeaking) {
       // Speech has ended and AI is not speaking, send the message
       sendVoiceMessage(transcript);
       resetTranscript();
     }
-  }, [transcript, speechListening, isSpeaking, sendVoiceMessage, resetTranscript]);
+  }, [currentMode, transcript, speechListening, isSpeaking, sendVoiceMessage, resetTranscript]);
 
   // Handle WebSocket messages
   useEffect(() => {

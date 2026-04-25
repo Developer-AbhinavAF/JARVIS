@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  User,
   Bell,
   Shield,
   Palette,
@@ -16,20 +15,22 @@ import {
   AlertTriangle,
   Zap,
   Moon,
-  Sun,
   Monitor,
   Wifi,
-  Bluetooth,
-  Power,
-  ChevronRight,
-  ToggleLeft,
-  ToggleRight,
   Sliders,
   Cpu,
   HardDrive,
   Sparkles,
+  Crown,
+  Wand2,
+  Clock,
+  Search,
+  Download,
+  History,
+  Type,
+  Focus,
+  Minimize2,
 } from 'lucide-react';
-import { useStore } from '@/store/useStore';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -52,18 +53,6 @@ const itemVariants = {
       stiffness: 100,
       damping: 15,
     },
-  },
-};
-
-const cardHoverVariants = {
-  rest: { scale: 1 },
-  hover: { 
-    scale: 1.02,
-    transition: {
-      type: 'spring',
-      stiffness: 400,
-      damping: 25,
-    }
   },
 };
 
@@ -120,7 +109,6 @@ function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: b
 }
 
 export default function SettingsSection() {
-  const { isConnected } = useStore();
   const [activeTab, setActiveTab] = useState('general');
   const [saved, setSaved] = useState(false);
 
@@ -138,6 +126,17 @@ export default function SettingsSection() {
     animations: true,
     highPerformance: false,
     offlineMode: false,
+    // 10 Pro Features
+    autoSend3Sec: true,           // 1. Auto-send after 3 sec silence
+    smartSuggestions: true,       // 2. AI smart suggestions
+    quickActions: true,           // 3. Quick actions widget
+    miniMode: false,              // 4. Mini floating mode
+    conversationSearch: true,     // 5. Search chat history
+    exportChat: true,             // 6. Export to PDF/TXT
+    scheduledTasks: true,         // 7. Reminders & scheduled tasks
+    voiceClone: false,            // 8. Voice personalization
+    autoCorrection: true,         // 9. Smart auto-correction
+    contextMemory: true,          // 10. Context-aware responses
   });
 
   const handleSave = () => {
@@ -149,6 +148,7 @@ export default function SettingsSection() {
     { id: 'general', label: 'General', icon: Sliders },
     { id: 'voice', label: 'Voice & Audio', icon: Mic },
     { id: 'appearance', label: 'Appearance', icon: Palette },
+    { id: 'features', label: 'Pro Features', icon: Crown },
     { id: 'privacy', label: 'Privacy & Data', icon: Shield },
     { id: 'advanced', label: 'Advanced', icon: Cpu },
   ];
@@ -367,6 +367,122 @@ export default function SettingsSection() {
                 description="Enable smooth transitions and effects"
                 control={<ToggleSwitch checked={settings.animations} onChange={(v) => setSettings({ ...settings, animations: v })} />}
               />
+            </motion.div>
+          )}
+
+          {activeTab === 'features' && (
+            <motion.div
+              key="features"
+              variants={containerVariants}
+              initial="hidden"
+              animate="visible"
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-4 max-w-2xl"
+            >
+              <motion.div variants={itemVariants} className="mb-6">
+                <div className="flex items-center gap-2 mb-1">
+                  <Crown size={20} className="text-yellow-400" />
+                  <h3 className="text-lg font-semibold text-jarvis-text">Pro Features</h3>
+                </div>
+                <p className="text-sm text-jarvis-textMuted">10 powerful features to enhance your JARVIS experience</p>
+              </motion.div>
+
+              {/* Feature 1: Auto-Send 3 Sec */}
+              <SettingItem
+                icon={<Clock size={20} />}
+                title="1. Auto-Send (3s Silence)"
+                description="Automatically send message after 3 seconds of silence in voice mode"
+                control={<ToggleSwitch checked={settings.autoSend3Sec} onChange={(v) => setSettings({ ...settings, autoSend3Sec: v })} />}
+              />
+
+              {/* Feature 2: Smart Suggestions */}
+              <SettingItem
+                icon={<Wand2 size={20} />}
+                title="2. AI Smart Suggestions"
+                description="Get intelligent command suggestions based on context"
+                control={<ToggleSwitch checked={settings.smartSuggestions} onChange={(v) => setSettings({ ...settings, smartSuggestions: v })} />}
+              />
+
+              {/* Feature 3: Quick Actions */}
+              <SettingItem
+                icon={<Zap size={20} />}
+                title="3. Quick Actions Widget"
+                description="Floating quick access buttons for common tasks"
+                control={<ToggleSwitch checked={settings.quickActions} onChange={(v) => setSettings({ ...settings, quickActions: v })} />}
+              />
+
+              {/* Feature 4: Mini Mode */}
+              <SettingItem
+                icon={<Minimize2 size={20} />}
+                title="4. Mini Floating Mode"
+                description="Compact floating widget for multitasking"
+                control={<ToggleSwitch checked={settings.miniMode} onChange={(v) => setSettings({ ...settings, miniMode: v })} />}
+              />
+
+              {/* Feature 5: Conversation Search */}
+              <SettingItem
+                icon={<Search size={20} />}
+                title="5. Chat History Search"
+                description="Search through all your past conversations instantly"
+                control={<ToggleSwitch checked={settings.conversationSearch} onChange={(v) => setSettings({ ...settings, conversationSearch: v })} />}
+              />
+
+              {/* Feature 6: Export Chat */}
+              <SettingItem
+                icon={<Download size={20} />}
+                title="6. Export Conversations"
+                description="Download chats as PDF or TXT files"
+                control={<ToggleSwitch checked={settings.exportChat} onChange={(v) => setSettings({ ...settings, exportChat: v })} />}
+              />
+
+              {/* Feature 7: Scheduled Tasks */}
+              <SettingItem
+                icon={<History size={20} />}
+                title="7. Scheduled Reminders"
+                description="Set time-based reminders and scheduled tasks"
+                control={<ToggleSwitch checked={settings.scheduledTasks} onChange={(v) => setSettings({ ...settings, scheduledTasks: v })} />}
+              />
+
+              {/* Feature 8: Voice Clone */}
+              <SettingItem
+                icon={<Mic size={20} />}
+                title="8. Voice Personalization"
+                description="Customize JARVIS voice characteristics"
+                control={<ToggleSwitch checked={settings.voiceClone} onChange={(v) => setSettings({ ...settings, voiceClone: v })} />}
+              />
+
+              {/* Feature 9: Auto Correction */}
+              <SettingItem
+                icon={<Type size={20} />}
+                title="9. Smart Auto-Correction"
+                description="Automatically fix speech recognition errors"
+                control={<ToggleSwitch checked={settings.autoCorrection} onChange={(v) => setSettings({ ...settings, autoCorrection: v })} />}
+              />
+
+              {/* Feature 10: Context Memory */}
+              <SettingItem
+                icon={<Focus size={20} />}
+                title="10. Context-Aware Memory"
+                description="JARVIS remembers context from previous messages"
+                control={<ToggleSwitch checked={settings.contextMemory} onChange={(v) => setSettings({ ...settings, contextMemory: v })} />}
+              />
+
+              <motion.div 
+                variants={itemVariants} 
+                className="mt-6 p-4 rounded-xl bg-gradient-to-r from-jarvis-accentPink/10 to-jarvis-accentRed/10 border border-jarvis-accentPink/20"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-jarvis-accentPink/20">
+                    <Sparkles size={20} className="text-jarvis-accentPink" />
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-jarvis-text">Pro Tips</h4>
+                    <p className="text-xs text-jarvis-textMuted">
+                      Try saying "volume up", "open youtube", or "system status" for instant actions!
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
             </motion.div>
           )}
 

@@ -11,7 +11,15 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 
+# CRITICAL: Clear all proxy env vars BEFORE importing groq/httpx
+# This fixes: "Client.__init__() got an unexpected keyword argument 'proxies'"
+for key in list(os.environ.keys()):
+    if 'proxy' in key.lower():
+        del os.environ[key]
+
+import httpx
 from groq import Groq
 
 from jarvis import config
@@ -28,9 +36,58 @@ class JarvisLLM:
 
     def __init__(self) -> None:
         """Initialize Groq client and conversation history."""
-
-        self.client = Groq(api_key=config.GROQ_API_KEY)
+        
+        self.api_keys = config.GROQ_API_KEYS if config.GROQ_API_KEYS else [config.GROQ_API_KEY] if config.GROQ_API_KEY else []
+        self.current_key_index = 0
+        self.client = None
+        
+        # Try each API key until one works
+        for i, api_key in enumerate(self.api_keys):
+            try:
+                # Create custom httpx client without proxies
+                http_client = httpx.Client(trust_env=False)
+                
+                # Initialize Groq client with custom http_client (no proxies)
+                self.client = Groq(
+                    api_key=api_key,
+                    http_client=http_client
+                )
+                self.current_key_index = i
+                logger.info(f"Groq client initialized successfully with key {i+1}/{len(self.api_keys)}")
+                break
+            except Exception as e:
+                logger.warning(f"API key {i+1} failed: {e}")
+                continue
+        
+        if not self.client:
+            logger.error("All Groq API keys failed to initialize!")
+            
         self.history: list[dict[str, str]] = []
+    
+    def _rotate_api_key(self) -> bool:
+        """Rotate to next available API key when current one fails."""
+        if len(self.api_keys) <= 1:
+            return False
+            
+        original_index = self.current_key_index
+        for i in range(1, len(self.api_keys)):
+            next_index = (self.current_key_index + i) % len(self.api_keys)
+            api_key = self.api_keys[next_index]
+            
+            try:
+                http_client = httpx.Client(trust_env=False)
+                self.client = Groq(
+                    api_key=api_key,
+                    http_client=http_client
+                )
+                self.current_key_index = next_index
+                logger.info(f"Rotated to API key {next_index + 1}/{len(self.api_keys)}")
+                return True
+            except Exception as e:
+                logger.warning(f"API key {next_index + 1} also failed: {e}")
+                continue
+                
+        return False
 
     def _trim_history(self) -> None:
         """Trim history to the last MAX_HISTORY_TURNS turns."""
@@ -38,8 +95,26 @@ class JarvisLLM:
         max_messages = self.MAX_HISTORY_TURNS * 2
         if len(self.history) > max_messages:
             self.history = self.history[-max_messages:]
+    
+    def _load_memory_context(self) -> str:
+        """Load recent conversation summaries from long-term memory."""
+        try:
+            from jarvis.memory import memory
+            # Get last 5 important conversations
+            recent = memory.get_recent_conversations(limit=5)
+            if not recent:
+                return ""
+            
+            context_parts = ["📚 Previous conversation context:"]
+            for conv in recent:
+                context_parts.append(f"- {conv.get('summary', '')}")
+            
+            return "\n".join(context_parts)
+        except Exception as e:
+            logger.debug(f"Could not load memory context: {e}")
+            return ""
 
-    def _call_groq(self, extra_messages: list[dict[str, str]] | None = None) -> str:
+    def _call_groq(self, extra_messages: list[dict[str, str]] | None = None, retry_count: int = 0) -> str:
         """Call Groq chat completions and return assistant content.
 
         Returns:
@@ -62,6 +137,18 @@ class JarvisLLM:
             content = (completion.choices[0].message.content or "").strip()
             return content
         except Exception as exc:
+            error_msg = str(exc).lower()
+            
+            # Check if it's a rate limit or auth error that might be fixed by rotating keys
+            is_rate_limit = any(x in error_msg for x in ['rate limit', '429', 'quota', 'insufficient', 'credits'])
+            is_auth_error = any(x in error_msg for x in ['auth', 'api key', 'invalid', 'unauthorized', '401', '403'])
+            
+            if (is_rate_limit or is_auth_error) and retry_count < len(self.api_keys):
+                logger.warning(f"API key {self.current_key_index + 1} failed ({'rate limit' if is_rate_limit else 'auth error'}), rotating...")
+                if self._rotate_api_key():
+                    # Retry with new key
+                    return self._call_groq(extra_messages, retry_count + 1)
+            
             logger.exception("Groq call failed")
 
             # Return a short error string so you can immediately see if this is a
@@ -84,13 +171,19 @@ class JarvisLLM:
             raw = raw.replace("json\n", "", 1).strip()
 
         # Try to find JSON object in the text if it's not pure JSON
-        # Pattern: look for {"tool":...} even if surrounded by text
+        # Pattern: look for {"tool":...} or {'tool':...} even if surrounded by text
         import re
-        json_pattern = r'\{\s*"tool"[^}]+\}'
+        # Handle both single and double quotes, and nested braces
+        json_pattern = r'\{\s*[\'"]?tool[\'"]?\s*:\s*[\'"]([^\'"]+)[\'"][^}]*\}'
         match = re.search(json_pattern, raw)
         if match:
             raw = match.group(0)
             logger.debug("Extracted JSON from text: %s", raw)
+        
+        # Convert single quotes to double quotes for valid JSON parsing
+        if raw.startswith("{") and "'" in raw and '"' not in raw.replace("'", ""):
+            raw = raw.replace("'", '"')
+            logger.debug("Converted single quotes to double quotes")
 
         try:
             obj = json.loads(raw)
@@ -133,14 +226,66 @@ class JarvisLLM:
             logger.exception("Unexpected tool dispatch error")
             return "Tool dispatch failed."
 
-    def chat(self, user_input: str) -> str:
-        """Process a user turn, optionally run a tool, and return final response."""
+    def chat(self, user_input: str) -> dict:
+        """Process a user turn, optionally run a tool, and return structured response with actions."""
 
         user_input = (user_input or "").strip()
         if not user_input:
-            return "Say that again."
+            return {"text": "I didn't receive any message. How can I help you today?", "actions": []}
 
         logger.info("Processing user input: %s", user_input[:50])
+        
+        # === LOAD MEMORY CONTEXT ===
+        memory_context = self._load_memory_context()
+        if memory_context:
+            logger.info("🧠 Loaded memory context with recent conversations")
+        
+        # === SELF-LEARNING CHECK ===
+        # Check if we have a correction for this or similar query
+        from jarvis.learning_memory import learning_memory
+        correction = learning_memory.find_correction(user_input, threshold=0.85)
+        
+        if correction:
+            logger.info(f"💡 Learning memory applied! Found correction (similarity: {correction.get('similarity', 1.0):.2f})")
+            # Use corrected response but still check if tool call needed
+            corrected_response = correction['correct_response']
+            
+            # Still add to history for context
+            self.history.append({"role": "user", "content": user_input})
+            self._trim_history()
+            
+            # Check if correction contains tool call
+            tool_call = self._extract_tool_call(corrected_response)
+            if tool_call:
+                actions = [tool_call]
+                tool_result = self._dispatch_tool(tool_call)
+                
+                # Synthesize final response with tool result
+                extra = [
+                    {
+                        "role": "system",
+                        "content": (
+                            f"You previously made a mistake but learned the correct answer. "
+                            f"Use this CORRECTED approach:\n{corrected_response}\n\n"
+                            f"Tool result: {tool_result}\n"
+                            f"Respond naturally acknowledging what was done."
+                        ),
+                    }
+                ]
+                final = self._call_groq(extra_messages=extra)
+                self.history.append({"role": "assistant", "content": final})
+                self._trim_history()
+                return {"text": final, "actions": actions}
+            else:
+                # No tool needed, just return corrected response
+                self.history.append({"role": "assistant", "content": corrected_response})
+                self._trim_history()
+                return {"text": corrected_response, "actions": []}
+        
+        # === NORMAL LLM FLOW ===
+        # Inject memory context before user message
+        if memory_context:
+            self.history.append({"role": "system", "content": memory_context})
         
         self.history.append({"role": "user", "content": user_input})
         self._trim_history()
@@ -151,12 +296,16 @@ class JarvisLLM:
         # Handle empty response from LLM
         if not first_pass or first_pass.strip() == "":
             logger.warning("LLM returned empty response")
-            return "I didn't get a response. Let me try again."
+            return {"text": "I didn't get a response. Let me try again.", "actions": []}
         
         tool_call = self._extract_tool_call(first_pass)
+        actions = []
 
         if tool_call:
             logger.info("Tool call detected: %s", tool_call)
+            # Store action info for frontend
+            actions.append(tool_call)
+            
             # Two-pass LLM: first to detect tool, second to synthesise result.
             tool_result = self._dispatch_tool(tool_call)
             logger.debug("Tool result: %s", tool_result[:100] if tool_result else "EMPTY")
@@ -165,17 +314,32 @@ class JarvisLLM:
                 {
                     "role": "system",
                     "content": (
-                        "You just called a tool. Use the tool result below to answer the user. "
-                        "Reply in plain conversational English (no JSON).\n\n"
-                        f"TOOL_RESULT:\n{tool_result}"
+                        "You just called a tool. Use the tool result below to create a helpful, natural response. "
+                        "Reply in plain conversational English (no JSON, no code, no brackets).\n\n"
+                        f"TOOL_RESULT:\n{tool_result}\n\n"
+                        "Instructions:\n"
+                        "- Acknowledge what was done\n"
+                        "- NEVER output raw JSON, arrays, or code\n"
+                        "- Be concise and friendly\n"
+                        "- Example: 'I've opened Chrome for you.'"
                     ),
                 }
             ]
             final = self._call_groq(extra_messages=extra)
             
-            # Handle empty after tool call
+            # Handle empty after tool call - provide a clean fallback
             if not final or final.strip() == "":
-                final = f"Done. {tool_result[:100]}"
+                # Create a clean human-readable message from tool result
+                clean_result = str(tool_result).replace('{"tool":', '').replace('"target":', '').replace('[', '').replace(']', '').replace('"', '').strip()
+                if len(clean_result) > 50:
+                    clean_result = clean_result[:50] + "..."
+                final = f"Done! {clean_result}"
+            
+            # Clean up any JSON-like artifacts that might have slipped through
+            import re
+            json_pattern = r'\{[^}]*\}|\[[^\]]*\]|"tool"\s*:\s*"[^"]*"'
+            final = re.sub(json_pattern, '', final)
+            final = final.replace('  ', ' ').strip()
         else:
             final = first_pass
 
@@ -190,7 +354,7 @@ class JarvisLLM:
         except Exception:
             logger.exception("Failed to save conversation to memory")
         
-        return final
+        return {"text": final, "actions": actions}
 
     def _extract_topics(self, user_input: str, assistant_response: str) -> list[str]:
         """Extract key topics from conversation for memory indexing."""

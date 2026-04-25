@@ -4,49 +4,32 @@ import {
   BookOpen,
   Code,
   Terminal,
-  Cpu,
   Mic,
   Keyboard,
   Zap,
   Shield,
   HelpCircle,
   ChevronRight,
-  ChevronDown,
-  ExternalLink,
   Github,
-  Twitter,
-  MessageCircle,
-  Mail,
   Sparkles,
-  FileText,
   Play,
-  Lightbulb,
-  AlertCircle,
-  CheckCircle,
-  Info,
   Search,
-  Command,
-  MousePointer,
   Globe,
-  Settings,
-  Download,
   Upload,
   Image,
   MessageSquare,
-  Bot,
   Brain,
   Wand2,
   Volume2,
   Monitor,
   Database,
-  Lock,
-  Eye,
-  FileCode,
-  Layers,
-  Puzzle,
   Rocket,
-  Star,
   Heart,
+  Power,
+  Twitter,
+  Star,
+  FileText,
+  Bot,
 } from 'lucide-react';
 
 const containerVariants = {
@@ -85,13 +68,6 @@ const cardVariants = {
     },
   },
 };
-
-interface DocSection {
-  id: string;
-  title: string;
-  icon: React.ReactNode;
-  content: React.ReactNode;
-}
 
 function FeatureCard({ icon, title, description, color = 'pink' }: { 
   icon: React.ReactNode; 

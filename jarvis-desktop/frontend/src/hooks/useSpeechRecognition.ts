@@ -74,6 +74,12 @@ export function useSpeechRecognition(): UseSpeechRecognitionReturn {
   
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isListeningRef = useRef<boolean>(false);
+
+  // Sync isListening state with ref
+  useEffect(() => {
+    isListeningRef.current = isListening;
+  }, [isListening]);
 
   useEffect(() => {
     // Check if Speech Recognition is supported
@@ -130,16 +136,17 @@ export function useSpeechRecognition(): UseSpeechRecognitionReturn {
         clearTimeout(timeoutRef.current);
       }
       
-      // Auto-stop after 1.5 seconds of silence (faster response)
-      // Or immediately if it looks like a short command (3 words or less)
+      // Auto-stop after 3 seconds of silence (auto-send feature)
+      // Or quickly if it looks like a short command (3 words or less)
       const words = (finalTranscript + interim).trim().split(/\s+/).filter(w => w.length > 0);
       const isShortCommand = words.length <= 3 && words.length > 0;
-      const silenceDelay = isShortCommand ? 500 : 1500; // 0.5s for short commands, 1.5s for longer
+      const silenceDelay = isShortCommand ? 800 : 3000; // 0.8s for short commands, 3s for longer (auto-send)
       
       timeoutRef.current = setTimeout(() => {
-        if (recognitionRef.current) {
+        if (recognitionRef.current && isListeningRef.current) {
           try {
             recognition.stop();
+            console.log('🎤 Auto-send: Silence detected, sending message...');
           } catch {
             // Already stopped
           }

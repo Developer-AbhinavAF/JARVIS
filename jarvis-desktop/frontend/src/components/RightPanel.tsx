@@ -20,7 +20,6 @@ import {
   LineChart,
   Line,
   ResponsiveContainer,
-  YAxis,
   AreaChart,
   Area,
 } from 'recharts';
@@ -38,14 +37,6 @@ export default function RightPanel() {
     { value: 55 },
     { value: 45 },
   ];
-
-  const formatBytes = (bytes: number) => {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-  };
 
   const formatSpeed = (bytesPerSec: number) => {
     if (bytesPerSec === 0) return '0 B/s';
@@ -221,7 +212,7 @@ export default function RightPanel() {
 }
 
 interface StatCardProps {
-  icon: React.ComponentType<{ size?: number; className?: string }>;
+  icon: React.ComponentType<{ size?: number | string; className?: string }>;
   label: string;
   value: string;
   subValue?: string;
@@ -234,7 +225,7 @@ function StatCard({ icon: Icon, label, value, subValue, chartData, color }: Stat
     <div className="glass-panel rounded-xl p-3 card-lift">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <Icon size={14} style={{ color }} />
+          <Icon size={14} className="text-jarvis-accentPink" />
           <span className="text-xs text-jarvis-textMuted">{label}</span>
         </div>
       </div>
@@ -258,7 +249,7 @@ function StatCard({ icon: Icon, label, value, subValue, chartData, color }: Stat
 }
 
 function PluginIcon({ name }: { name: string }) {
-  const icons: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+  const icons: Record<string, React.ComponentType<{ size?: number | string; className?: string }>> = {
     Camera,
     Scan,
     FileText,

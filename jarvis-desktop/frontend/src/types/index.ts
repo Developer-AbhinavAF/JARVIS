@@ -10,12 +10,19 @@ export interface MessageAction {
   data?: any;
 }
 
+export interface MessageActions {
+  copy?: boolean;
+  speak?: boolean;
+  delete?: boolean;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;
-  actions?: MessageAction[];
+  actions?: MessageActions;
+  actionButtons?: MessageAction[];
 }
 
 export interface SystemStats {
@@ -92,8 +99,9 @@ export interface Note {
 
 export interface Reminder {
   id: string;
-  title: string;
+  text: string;
   time: number;
+  completed?: boolean;
   repeat?: 'daily' | 'weekly' | 'monthly';
 }
 

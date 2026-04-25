@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Mic, Copy, Volume2, Trash2, CheckSquare, StickyNote, Search, ExternalLink, Terminal, AlertCircle, Paperclip, Image, X, FileText } from 'lucide-react';
+import { Send, Mic, Copy, Volume2, Trash2, ExternalLink, Terminal, AlertCircle, Paperclip, Image, X, FileText } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { useChat } from '@/hooks/useApi';
-import type { Message } from '@/types';
+import type { Message, MessageAction, MessageActions } from '@/types';
 
 interface ChatResponse {
   response: string;
@@ -111,12 +111,44 @@ export default function ChatPanel() {
         setSuggestions(response.suggestions);
       }
       
-      // Add AI response
+      // Add AI response with typing effect
       addMessage({ 
         role: 'assistant', 
-        content: response.response,
-        actions: response.actions 
+        content: '',
+        actions: { copy: true, speak: true, delete: true } as MessageActions,
+        actionButtons: response.actions 
       });
+      
+      // Typing effect - type character by character
+      const fullResponse = response.response;
+      let currentIndex = 0;
+      const typeInterval = setInterval(() => {
+        if (currentIndex <= fullResponse.length) {
+          // Update message content progressively
+          const typedContent = fullResponse.slice(0, currentIndex);
+          // Update the last message with typed content
+          const { messages } = useStore.getState();
+          if (messages.length > 0) {
+            const lastIndex = messages.length - 1;
+            useStore.setState({
+              messages: messages.map((m, i) => 
+                i === lastIndex 
+                  ? { ...m, content: typedContent }
+                  : m
+              )
+            });
+          }
+          currentIndex += 3; // Type 3 characters at a time for smooth effect
+          
+          // Auto scroll while typing
+          if (scrollRef.current) {
+            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+          }
+        } else {
+          clearInterval(typeInterval);
+        }
+      }, 15); // 15ms per batch for smooth typing
+      
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Failed to connect to JARVIS AI';
       setError(errorMsg);
@@ -158,47 +190,6 @@ export default function ChatPanel() {
       e.preventDefault();
       handleSend();
     }
-  };
-
-  const handleQuickAction = (command: string) => {
-    setInput(command);
-    // Auto-send after a brief delay
-    setTimeout(() => {
-      // Need to use the command directly since input state update is async
-      if (command.trim()) {
-        const userMessage = command.trim();
-        setInput('');
-        setError(null);
-        setSuggestions([]);
-
-        // Add user message
-        addMessage({ role: 'user', content: userMessage });
-        setIsTyping(true);
-
-        // Send to API
-        sendMessage(userMessage)
-          .then((response: ChatResponse) => {
-            addMessage({
-              role: 'assistant',
-              content: response.response,
-              actions: response.actions,
-            });
-
-            if (response.suggestions) {
-              setSuggestions(response.suggestions);
-            }
-
-            // Execute actions
-            executeActions(response.actions);
-          })
-          .catch((err) => {
-            setError(err.message || 'Failed to send message');
-          })
-          .finally(() => {
-            setIsTyping(false);
-          });
-      }
-    }, 100);
   };
 
   const copyToClipboard = (text: string) => {
@@ -323,6 +314,7 @@ export default function ChatPanel() {
           { label: 'Network', icon: Terminal, command: 'network status' },
           { label: 'Calculator', icon: Terminal, command: 'calculate 15 * 23' },
           { label: 'Notepad', icon: Terminal, command: 'open notepad' },
+          { label: 'Documents', icon: FileText, command: '__upload__', isUpload: true },
           { label: 'Joke', icon: Terminal, command: 'tell me a joke' },
           { label: 'Quote', icon: Terminal, command: 'quote' },
           { label: 'Fact', icon: Terminal, command: 'random fact' },
@@ -339,8 +331,22 @@ export default function ChatPanel() {
               whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.1)' }}
               whileTap={{ scale: 0.95 }}
               onClick={() => {
-                setInput(action.command);
-                handleSend();
+                if (action.isUpload) {
+                  // Trigger file input for document upload
+                  const input = document.createElement('input');
+                  input.type = 'file';
+                  input.accept = '.pdf,.docx,.doc,.txt,.xlsx,.xls,.pptx,.ppt,.png,.jpg,.jpeg';
+                  input.onchange = async (e) => {
+                    const file = (e.target as HTMLInputElement).files?.[0];
+                    if (file) {
+                      await uploadDocument(file);
+                    }
+                  };
+                  input.click();
+                } else {
+                  setInput(action.command);
+                  handleSend();
+                }
               }}
             >
               <Icon size={14} />
@@ -543,9 +549,9 @@ function MessageBubble({
               {message.content}
             </p>
             {/* Show action badges */}
-            {message.actions && message.actions.length > 0 && (
+            {message.actionButtons && message.actionButtons.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-2 pt-2 border-t border-white/10">
-                {message.actions.map((action, idx) => (
+                {message.actionButtons.map((action: MessageAction, idx: number) => (
                   <span
                     key={idx}
                     className="px-2 py-0.5 rounded text-[10px] bg-jarvis-accentPink/20 text-jarvis-accentPink"

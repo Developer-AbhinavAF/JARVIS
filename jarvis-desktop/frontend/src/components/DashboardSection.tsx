@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Cpu,
@@ -7,15 +6,14 @@ import {
   Wifi,
   Activity,
   Thermometer,
-  Fan,
   Clock,
   TrendingUp,
   AlertTriangle,
+  LayoutDashboard,
+  CheckCircle,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import {
-  LineChart,
-  Line,
   AreaChart,
   Area,
   ResponsiveContainer,
@@ -377,6 +375,3 @@ export default function DashboardSection() {
     </div>
   );
 }
-
-// Add missing import
-import { CheckCircle, LayoutDashboard } from 'lucide-react';

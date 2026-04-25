@@ -10,17 +10,19 @@ import {
   Quote,
   Brain,
   Terminal,
-  Monitor,
-  Upload,
   Settings,
   BookOpen,
   Sparkles,
   Command,
   FileImage,
+  Crown,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
+import FeaturesHub from './FeaturesHub';
+import { useState, useEffect } from 'react';
 
 const quickCards = [
+  { id: 'features', label: 'Features Hub', icon: Crown, color: 'from-yellow-500 to-amber-500', desc: '60+ powerful features' },
   { id: 'chat', label: 'Chat with JARVIS', icon: MessageSquare, color: 'from-pink-500 to-rose-500', desc: 'Ask anything' },
   { id: 'upload', label: 'Upload & Analyze', icon: FileImage, color: 'from-orange-500 to-amber-500', desc: 'Images, PDFs, Files' },
   { id: 'system', label: 'System Status', icon: Cpu, color: 'from-blue-500 to-cyan-500', desc: 'CPU, RAM, Battery' },
@@ -46,8 +48,19 @@ const funCards = [
 
 export default function HomeSection() {
   const { setActiveTab, setInput } = useStore();
+  const [showFeaturesHub, setShowFeaturesHub] = useState(false);
+
+  useEffect(() => {
+    const handleOpenFeaturesHub = () => setShowFeaturesHub(true);
+    window.addEventListener('open-features-hub', handleOpenFeaturesHub);
+    return () => window.removeEventListener('open-features-hub', handleOpenFeaturesHub);
+  }, []);
 
   const handleCardClick = (id: string) => {
+    if (id === 'features') {
+      setShowFeaturesHub(true);
+      return;
+    }
     if (id === 'chat') {
       setActiveTab('assistant');
     } else if (id === 'upload') {
@@ -270,6 +283,9 @@ export default function HomeSection() {
           Press <kbd className="px-2 py-1 rounded bg-white/10 text-jarvis-text">Ctrl+J</kbd> to toggle JARVIS from anywhere
         </p>
       </motion.div>
+
+      {/* Features Hub Modal */}
+      {showFeaturesHub && <FeaturesHub onClose={() => setShowFeaturesHub(false)} />}
     </div>
   );
 }

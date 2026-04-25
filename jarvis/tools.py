@@ -145,56 +145,77 @@ def web_search(query: str) -> str:
     return "Web search failed. Please check your internet connection or try again later."
 
 
-def plot_chart(chart_type: str, title: str, labels: list[str], values: list[float]) -> str:
-    """Display a chart in a pop-up window on a background daemon thread."""
+def plot_chart(chart_type: str, title: str, labels: list[str], values: list[float], save_path: str = None) -> str:
+    """Create a chart and save to file for frontend display.
+    
+    Args:
+        chart_type: bar, line, or pie
+        title: Chart title
+        labels: Data labels
+        values: Data values
+        save_path: Optional path to save image (auto-generated if not provided)
+        
+    Returns:
+        Path to saved chart image
+    """
+    import os
+    from datetime import datetime
 
     if labels is None or values is None or len(labels) != len(values):
         return "Invalid chart data: labels and values must be the same length."
+    
+    # Auto-generate save path in JARVIS root (persistent across restarts)
+    if not save_path:
+        graphs_dir = os.path.join(config.JARVIS_ROOT, "graphs")
+        os.makedirs(graphs_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        save_path = os.path.join(graphs_dir, f"chart_{chart_type}_{timestamp}.png")
 
     df = pd.DataFrame({"label": labels, "value": values})
     chart_type = (chart_type or "").strip().lower()
 
-    def _plot_worker() -> None:
-        # TkAgg backend + plt.show() can block; keep it isolated from the main loop.
-        try:
-            import matplotlib
+    try:
+        import matplotlib
+        matplotlib.use("Agg")  # Non-interactive backend
+        import matplotlib.pyplot as plt
 
-            matplotlib.use("TkAgg")
-            import matplotlib.pyplot as plt
+        plt.style.use("dark_background")
+        fig, ax = plt.subplots(figsize=(10, 6))
 
-            plt.style.use("dark_background")
-            fig, ax = plt.subplots(figsize=(8, 4.5))
+        # Dark themed figure background
+        fig.patch.set_facecolor("#1a1a2e")
+        ax.set_facecolor("#1a1a2e")
 
-            # Dark themed figure background to match a "JARVIS" aesthetic.
-            fig.patch.set_facecolor("#1a1a2e")
-            ax.set_facecolor("#1a1a2e")
+        cmap = plt.get_cmap("cool")
 
-            cmap = plt.get_cmap("cool")
+        if chart_type == "bar":
+            colors = [cmap(i / max(1, len(df) - 1)) for i in range(len(df))]
+            ax.bar(df["label"], df["value"], color=colors, edgecolor='white')
+            ax.set_ylabel("Value")
+            ax.grid(True, alpha=0.3, axis='y')
+        elif chart_type == "line":
+            ax.plot(df["label"], df["value"], color=cmap(0.7), marker="o", linewidth=2, markersize=8)
+            ax.set_ylabel("Value")
+            ax.grid(True, alpha=0.3)
+        elif chart_type == "pie":
+            colors = [cmap(i / max(1, len(df) - 1)) for i in range(len(df))]
+            ax.pie(df["value"], labels=df["label"], colors=colors, autopct="%1.1f%%", startangle=90)
+        else:
+            return f"Unsupported chart type: {chart_type}. Use bar, line, or pie."
 
-            if chart_type == "bar":
-                colors = [cmap(i / max(1, len(df) - 1)) for i in range(len(df))]
-                ax.bar(df["label"], df["value"], color=colors)
-                ax.set_ylabel("Value")
-            elif chart_type == "line":
-                ax.plot(df["label"], df["value"], color=cmap(0.7), marker="o")
-                ax.set_ylabel("Value")
-            elif chart_type == "pie":
-                colors = [cmap(i / max(1, len(df) - 1)) for i in range(len(df))]
-                ax.pie(df["value"], labels=df["label"], colors=colors, autopct="%1.1f%%")
-            else:
-                logger.error("Unsupported chart_type=%s", chart_type)
-                return
-
-            ax.set_title(title or "Chart")
-            fig.tight_layout()
-            plt.show()
-        except Exception:
-            logger.exception("Chart plotting failed")
-
-    # Daemon thread: won't block program exit if user force-quits.
-    t = threading.Thread(target=_plot_worker, name="JarvisPlot", daemon=True)
-    t.start()
-    return "Chart displayed in pop-up window."
+        ax.set_title(title or "Chart", color='white', fontsize=14, fontweight='bold')
+        fig.tight_layout()
+        
+        # Save to file
+        plt.savefig(save_path, dpi=150, bbox_inches='tight', facecolor='#1a1a2e')
+        plt.close(fig)
+        
+        logger.info(f"✅ Chart saved to: {save_path}")
+        return f"📊 {chart_type.title()} chart created! Image saved at: {save_path}"
+        
+    except Exception as e:
+        logger.exception("Chart plotting failed")
+        return f"Chart error: {str(e)}"
 
 
 def open_app(target: str) -> str:
@@ -925,8 +946,64 @@ TOOL_REGISTRY = {
     "timer": timer,
 }
 
+# Merge academic tools
+try:
+    from jarvis.academic_tools import (
+        solve_math_problem,
+        solve_physics_problem,
+        plot_advanced_graph,
+        solve_coordinate_geometry,
+        unit_converter,
+    )
+
+    ACADEMIC_TOOL_REGISTRY = {
+        "solve_math": solve_math_problem,
+        "solve_physics": solve_physics_problem,
+        "plot_graph": plot_advanced_graph,
+        "coordinate_geometry": solve_coordinate_geometry,
+        "convert_units": unit_converter,
+    }
+    TOOL_REGISTRY.update(ACADEMIC_TOOL_REGISTRY)
+except ImportError:
+    pass
+
+# Merge document reading tools
+try:
+    from jarvis.document_reader import (
+        read_document,
+        search_documents,
+        list_documents,
+        get_document,
+    )
+
+    DOCUMENT_TOOL_REGISTRY = {
+        "read_document": read_document,
+        "search_documents": search_documents,
+        "list_documents": list_documents,
+        "get_document": get_document,
+    }
+    TOOL_REGISTRY.update(DOCUMENT_TOOL_REGISTRY)
+except ImportError:
+    pass
+
 # Merge all tool registries
 TOOL_REGISTRY.update(SYSTEM_CONTROL_REGISTRY)
 TOOL_REGISTRY.update(DASHBOARD_REGISTRY)
 TOOL_REGISTRY.update(MEMORY_REGISTRY)
 TOOL_REGISTRY.update(PLUGIN_REGISTRY)
+
+# Import and merge academic tools
+try:
+    from jarvis.academic_tools import ACADEMIC_REGISTRY
+    TOOL_REGISTRY.update(ACADEMIC_REGISTRY)
+    logger.info("✅ Academic tools loaded")
+except ImportError as e:
+    logger.warning(f"Academic tools not loaded: {e}")
+
+# Import and merge learning memory tools
+try:
+    from jarvis.learning_memory import LEARNING_REGISTRY
+    TOOL_REGISTRY.update(LEARNING_REGISTRY)
+    logger.info("✅ Learning memory tools loaded")
+except ImportError as e:
+    logger.warning(f"Learning memory tools not loaded: {e}")

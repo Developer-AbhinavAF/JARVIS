@@ -7,10 +7,12 @@ import {
   Newspaper,
   ChevronRight,
   Monitor,
+  Crown,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 
 const shortcuts = [
+  { id: 'features', label: 'Features Hub', icon: Crown, description: '60+ powerful features', color: 'from-yellow-500 to-amber-500' },
   { id: 'pc-control', label: 'PC Control', icon: Monitor, description: 'Manage your system' },
   { id: 'web-search', label: 'Web Search', icon: Search, description: 'Search the web' },
   { id: 'notes', label: 'Notes', icon: StickyNote, description: 'Save your thoughts' },
@@ -23,7 +25,10 @@ export default function BottomBar() {
   const { addMessage, setActiveTab } = useStore();
 
   const handleShortcut = (id: string, label: string) => {
-    if (id === 'web-search') {
+    if (id === 'features') {
+      // Features hub will be opened via custom event
+      window.dispatchEvent(new CustomEvent('open-features-hub'));
+    } else if (id === 'web-search') {
       addMessage({ role: 'user', content: 'search web' });
     } else if (id === 'notes') {
       setActiveTab('memory');
