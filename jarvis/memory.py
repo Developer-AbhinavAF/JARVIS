@@ -115,6 +115,22 @@ class JarvisMemory:
                     )
                 """)
 
+                # YouTube learning notes
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS youtube_notes (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        video_id TEXT UNIQUE,
+                        title TEXT,
+                        url TEXT,
+                        summary TEXT,
+                        key_points TEXT,
+                        topics TEXT,
+                        code_examples TEXT,
+                        full_transcript TEXT,
+                        learned_at TEXT
+                    )
+                """)
+
                 conn.commit()
                 logger.info("Memory database initialized")
 
@@ -435,9 +451,166 @@ class JarvisMemory:
             events = ", ".join([f"{e['event']} on {e['date']}" for e in upcoming[:3]])
             parts.append(f"Upcoming: {events}")
 
+        # YouTube learning notes
+        youtube_notes = self.get_youtube_notes(limit=5)
+        if youtube_notes:
+            parts.append(f"You have learned from {len(youtube_notes)} YouTube videos recently.")
+        
         if parts:
             return "Daily briefing: " + " ".join(parts)
         return "Daily briefing: All clear. No urgent items."
+
+    def save_youtube_notes(
+        self,
+        video_id: str,
+        title: str,
+        url: str,
+        summary: str,
+        key_points: list[str],
+        topics: list[str],
+        code_examples: list[dict],
+        full_transcript: str,
+    ) -> bool:
+        """Save YouTube video notes to memory.
+        
+        Args:
+            video_id: YouTube video ID
+            title: Video title
+            url: Video URL
+            summary: Summary of video content
+            key_points: List of key takeaways
+            topics: List of topics covered
+            code_examples: List of code examples with language and code
+            full_transcript: Full video transcript
+            
+        Returns:
+            True if saved successfully
+        """
+        try:
+            with self._lock, sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """INSERT OR REPLACE INTO youtube_notes 
+                       (video_id, title, url, summary, key_points, topics, code_examples, full_transcript, learned_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        video_id,
+                        title,
+                        url,
+                        summary,
+                        json.dumps(key_points),
+                        json.dumps(topics),
+                        json.dumps(code_examples),
+                        full_transcript,
+                        datetime.now().isoformat(),
+                    ),
+                )
+                conn.commit()
+                logger.info(f"YouTube notes saved: {title}")
+                return True
+        except Exception:
+            logger.exception("Failed to save YouTube notes")
+            return False
+
+    def get_youtube_notes(self, video_id: str = None, limit: int = 10) -> list[dict[str, Any]]:
+        """Get YouTube notes by video ID or recent notes.
+        
+        Args:
+            video_id: Specific video ID (optional)
+            limit: Number of recent notes to return if video_id not specified
+            
+        Returns:
+            List of YouTube notes dictionaries
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                if video_id:
+                    cursor.execute(
+                        "SELECT * FROM youtube_notes WHERE video_id = ?",
+                        (video_id,),
+                    )
+                else:
+                    cursor.execute(
+                        "SELECT * FROM youtube_notes ORDER BY learned_at DESC LIMIT ?",
+                        (limit,),
+                    )
+                
+                rows = cursor.fetchall()
+                results = []
+                for row in rows:
+                    note = dict(row)
+                    # Parse JSON fields
+                    for field in ['key_points', 'topics', 'code_examples']:
+                        try:
+                            note[field] = json.loads(note[field]) if note[field] else []
+                        except:
+                            note[field] = []
+                    results.append(note)
+                
+                return results
+        except Exception:
+            logger.exception("Failed to get YouTube notes")
+            return []
+
+    def search_youtube_notes(self, query: str) -> list[dict[str, Any]]:
+        """Search YouTube notes by title, summary, or topics.
+        
+        Args:
+            query: Search query
+            
+        Returns:
+            List of matching YouTube notes
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                search_term = f"%{query}%"
+                cursor.execute(
+                    """SELECT * FROM youtube_notes 
+                       WHERE title LIKE ? OR summary LIKE ? OR topics LIKE ?
+                       ORDER BY learned_at DESC""",
+                    (search_term, search_term, search_term),
+                )
+                
+                rows = cursor.fetchall()
+                results = []
+                for row in rows:
+                    note = dict(row)
+                    # Parse JSON fields
+                    for field in ['key_points', 'topics', 'code_examples']:
+                        try:
+                            note[field] = json.loads(note[field]) if note[field] else []
+                        except:
+                            note[field] = []
+                    results.append(note)
+                
+                return results
+        except Exception:
+            logger.exception("Failed to search YouTube notes")
+            return []
+
+    def delete_youtube_notes(self, video_id: str) -> bool:
+        """Delete YouTube notes by video ID.
+        
+        Args:
+            video_id: Video ID to delete
+            
+        Returns:
+            True if deleted successfully
+        """
+        try:
+            with self._lock, sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM youtube_notes WHERE video_id = ?", (video_id,))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception:
+            logger.exception("Failed to delete YouTube notes")
+            return False
 
     def _cleanup_old_memories(self, conn: sqlite3.Connection) -> None:
         """Remove old low-importance conversations to keep DB size manageable."""

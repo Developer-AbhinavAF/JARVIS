@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Mic, Copy, Volume2, Trash2, ExternalLink, Terminal, AlertCircle, Paperclip, Image, X, FileText } from 'lucide-react';
+import { Send, Mic, Copy, Volume2, Trash2, ExternalLink, Terminal, AlertCircle, Paperclip, Image, X, FileText, Maximize2, Minimize2 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { useChat } from '@/hooks/useApi';
 import type { Message, MessageAction, MessageActions } from '@/types';
+import { EnhancedMarkdown } from './EnhancedMarkdown';
 
 interface ChatResponse {
   response: string;
@@ -19,7 +20,7 @@ interface ChatResponse {
 }
 
 export default function ChatPanel() {
-  const { messages, addMessage, deleteMessage, isTyping, setIsTyping, mode, input, setInput } = useStore();
+  const { messages, addMessage, deleteMessage, clearMessages, isTyping, setIsTyping, mode, input, setInput, chatExpandMode, cycleExpandMode } = useStore();
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<{ name: string; type: string; data: string } | null>(null);
@@ -62,6 +63,62 @@ export default function ChatPanel() {
     reader.readAsDataURL(file);
   }, []);
 
+  // Upload document to backend
+  const uploadDocument = useCallback(async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('save_to_memory', 'true');
+    
+    // Add message about uploading
+    addMessage({
+      role: 'user',
+      content: `📄 Uploading document: ${file.name}`,
+    });
+    setIsTyping(true);
+
+    try {
+      const response = await fetch('http://localhost:8001/api/documents/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        const summary = data.content?.substring(0, 500) + (data.content?.length > 500 ? '...' : '');
+        addMessage({
+          role: 'assistant',
+          content: `📄 **Document uploaded and saved to memory!**\n\n**File:** ${data.file_name}\n**Type:** ${data.file_type}\n**Size:** ${(data.file_size / 1024).toFixed(1)} KB\n**Words:** ${data.word_count}\n\n**Content Preview:**\n\`\`\`\n${summary}\n\`\`\`\n\n💡 You can ask me questions about this document or search in it!`,
+        });
+      } else if (data.content) {
+        // Partial success - content was extracted but there was an error
+        const summary = data.content?.substring(0, 500) + (data.content?.length > 500 ? '...' : '');
+        addMessage({
+          role: 'assistant',
+          content: `⚠️ **Document partially read** (saved with warnings)\n\n**File:** ${data.file_name || data.original_filename}\n**Error:** ${data.error}\n\n**Content Preview:**\n\`\`\`\n${summary}\n\`\`\`\n\n💡 Content was extracted but there may be issues. You can still search in this document!`,
+        });
+      } else {
+        // Show detailed error for debugging
+        const errorDetails = data.error || 'Unknown error';
+        const savedPath = data.saved_path ? `\n📁 Saved to: ${data.saved_path}` : '';
+        const savedSize = data.saved_size ? `\n📊 Saved size: ${data.saved_size} bytes` : '';
+        const traceback = data.traceback ? `\n🔍 Details: ${data.traceback}` : '';
+        
+        addMessage({
+          role: 'assistant',
+          content: `⚠️ **Document upload failed**${savedPath}${savedSize}\n\n❌ Error: ${errorDetails}${traceback}\n\n💡 Try: Check if file is not empty and is a supported format (PDF, DOCX, TXT, etc.)`,
+        });
+      }
+    } catch (err) {
+      addMessage({
+        role: 'assistant',
+        content: `❌ **Error uploading document:** ${err instanceof Error ? err.message : 'Network error'}`,
+      });
+    } finally {
+      setIsTyping(false);
+    }
+  }, [addMessage, setIsTyping]);
+
   const handleSend = useCallback(async () => {
     if ((!input.trim() && !uploadedFile) || loading) return;
 
@@ -69,6 +126,16 @@ export default function ChatPanel() {
     setInput('');
     setError(null);
     setSuggestions([]);
+
+    // Handle /clean command
+    if (userMessage.toLowerCase() === '/clean' || userMessage.toLowerCase() === '/clear') {
+      clearMessages();
+      addMessage({
+        role: 'assistant',
+        content: '🧹 **Chat cleared!** All previous messages have been removed.\n\nHow can I help you?',
+      });
+      return;
+    }
 
     // Add user message with file attachment indicator
     const messageContent = uploadedFile 
@@ -214,17 +281,23 @@ export default function ChatPanel() {
         style={{ scrollBehavior: 'smooth' }}
       >
         <AnimatePresence initial={false} mode="popLayout">
-          {messages.map((message, index) => (
-            <MessageBubble
-              key={message.id}
-              message={message}
-              isFirst={index === 0}
-              index={index}
-              onCopy={() => copyToClipboard(message.content)}
-              onSpeak={() => speakText(message.content)}
-              onDelete={() => deleteMessage(message.id)}
-            />
-          ))}
+          {messages.map((message, index) => {
+            // Find last AI message index
+            const lastAIIndex = [...messages].reverse().findIndex(m => m.role === 'assistant');
+            const isLastAI = lastAIIndex !== -1 && index === messages.length - 1 - lastAIIndex;
+            return (
+              <MessageBubble
+                key={message.id}
+                message={message}
+                isFirst={index === 0}
+                isLastAI={isLastAI}
+                index={index}
+                onCopy={() => copyToClipboard(message.content)}
+                onSpeak={() => speakText(message.content)}
+                onDelete={() => deleteMessage(message.id)}
+              />
+            );
+          })}
         </AnimatePresence>
 
         {/* Scroll to bottom indicator */}
@@ -384,30 +457,48 @@ export default function ChatPanel() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="mb-3 flex items-center gap-2 p-2 rounded-xl bg-jarvis-accentPink/10 border border-jarvis-accentPink/30"
+              className="mb-3 flex items-center gap-3 p-3 rounded-xl bg-jarvis-accentPink/10 border border-jarvis-accentPink/30"
             >
-              <div className="p-2 rounded-lg bg-jarvis-accentPink/20 text-jarvis-accentPink">
-                {uploadedFile.type.startsWith('image/') ? <Image size={18} /> : <FileText size={18} />}
-              </div>
+              {/* Image Thumbnail or Document Icon */}
+              {uploadedFile.type.startsWith('image/') ? (
+                <div className="relative w-16 h-16 rounded-lg overflow-hidden bg-black/40 flex-shrink-0">
+                  <img 
+                    src={`data:${uploadedFile.type};base64,${uploadedFile.data}`}
+                    alt="Preview"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              ) : (
+                <div className="w-16 h-16 rounded-lg bg-gradient-to-br from-jarvis-accentPink/30 to-jarvis-accentRed/30 flex items-center justify-center flex-shrink-0">
+                  <FileText size={28} className="text-jarvis-accentPink" />
+                </div>
+              )}
+              
+              {/* File Info */}
               <div className="flex-1 min-w-0">
-                <p className="text-sm text-jarvis-text truncate">{uploadedFile.name}</p>
-                <p className="text-xs text-jarvis-textMuted">
-                  {uploadedFile.type.startsWith('image/') ? 'Image ready for analysis' : 'File attached'}
+                <p className="text-sm font-medium text-jarvis-text truncate">{uploadedFile.name}</p>
+                <p className="text-xs text-jarvis-textMuted mt-0.5">
+                  {(uploadedFile.data.length * 0.75 / 1024 / 1024).toFixed(2)} MB
+                  {uploadedFile.type.startsWith('image/') ? ' • Image' : ` • ${uploadedFile.type.split('/')[1]?.toUpperCase() || 'File'}`}
+                </p>
+                <p className="text-xs text-jarvis-accentPink mt-1">
+                  {uploadedFile.type.startsWith('image/') ? '✨ Image ready for analysis' : '📎 Document attached'}
                 </p>
               </div>
+              
               <motion.button
                 onClick={() => setUploadedFile(null)}
-                className="p-1.5 rounded-lg hover:bg-white/10 text-jarvis-textMuted hover:text-red-400 transition-colors"
+                className="p-2 rounded-lg hover:bg-white/10 text-jarvis-textMuted hover:text-red-400 transition-colors"
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
               >
-                <X size={16} />
+                <X size={18} />
               </motion.button>
             </motion.div>
           )}
         </AnimatePresence>
 
-        <div className="flex items-center gap-3 glass-panel rounded-2xl p-2">
+        <div className="flex items-center gap-3 glass-panel rounded-2xl p-2 max-w-3xl mx-auto w-full">
           {/* Mode Indicator */}
           <div
             className={`w-10 h-10 rounded-xl flex items-center justify-center ${
@@ -489,6 +580,7 @@ export default function ChatPanel() {
 interface MessageBubbleProps {
   message: Message;
   isFirst: boolean;
+  isLastAI: boolean;
   index: number;
   onCopy: () => void;
   onSpeak: () => void;
@@ -498,6 +590,7 @@ interface MessageBubbleProps {
 function MessageBubble({
   message,
   isFirst,
+  isLastAI,
   index,
   onCopy,
   onSpeak,
@@ -545,9 +638,13 @@ function MessageBubble({
           </div>
         ) : (
           <div className="space-y-2">
-            <p className="text-sm leading-relaxed whitespace-pre-wrap">
-              {message.content}
-            </p>
+            {!isUser ? (
+              <EnhancedMarkdown content={message.content} />
+            ) : (
+              <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                {message.content}
+              </p>
+            )}
             {/* Show action badges */}
             {message.actionButtons && message.actionButtons.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-2 pt-2 border-t border-white/10">
@@ -607,6 +704,15 @@ function MessageBubble({
               >
                 <Trash2 size={14} />
               </button>
+              {!isUser && isLastAI && (
+                <button
+                  onClick={cycleExpandMode}
+                  className="p-1.5 rounded-lg bg-black/50 text-jarvis-textMuted hover:text-jarvis-accentPink transition-colors"
+                  title={chatExpandMode === 'normal' ? 'Expand canvas' : chatExpandMode === 'half' ? 'Full screen' : 'Reset canvas'}
+                >
+                  {chatExpandMode === 'normal' ? <Maximize2 size={14} /> : chatExpandMode === 'half' ? <Maximize2 size={14} /> : <Minimize2 size={14} />}
+                </button>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

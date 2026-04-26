@@ -16,7 +16,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Form, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Form, Request, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
@@ -934,6 +934,14 @@ class JarvisCore:
             self.dashboard = SystemDashboard()
             self.llm = JarvisLLM()
             
+            # Initialize YouTube learner
+            try:
+                from jarvis.youtube_learner import init_youtube_learner
+                init_youtube_learner(openai_client=self.llm.client, memory=self.memory)
+                logger.info("✅ YouTube learner initialized")
+            except Exception as e:
+                logger.warning(f"YouTube learner init failed: {e}")
+            
             # Start monitoring
             self.dashboard.start_monitoring()
             
@@ -1074,10 +1082,404 @@ class JarvisCore:
         if q in ["pause", "pause music", "stop", "stop music", "stop media"] and len(q) < 25:
             return await self._execute_single_task("pause_media", session_id)
         
+        # 6. Document reading commands
+        # Handle "read this file", "what's written", "tell me what's in", etc.
+        doc_read_patterns = [
+            "read file ", "read document ", "upload ", "what's written in ", 
+            "whats written in ", "what is written in ", "tell me what's in ",
+            "tell me what is in ", "show me what's in ", "show me what is in ",
+            "what does this file contain", "what's in this file", "whats in this file",
+            "tell me what's written", "tell me what is written"
+        ]
+        
+        is_doc_read_command = any(q.startswith(pattern) or pattern in q for pattern in doc_read_patterns)
+        
+        if is_doc_read_command and len(q) > 10:
+            # Extract file path (handle both "read file C:/path" and "read file 'path'" formats)
+            file_path = None
+            if "read file " in q:
+                file_path = message[10:].strip().strip("'\"`")
+            elif "read document " in q:
+                file_path = message[14:].strip().strip("'\"`")
+            elif q.startswith("upload "):
+                file_path = message[7:].strip().strip("'\"`")
+            
+            if file_path and (file_path.endswith('.pdf') or file_path.endswith('.docx') or 
+                              file_path.endswith('.txt') or file_path.endswith('.xlsx') or
+                              file_path.endswith('.pptx') or file_path.endswith('.doc') or
+                              file_path.endswith('.xls') or file_path.endswith('.ppt')):
+                from jarvis.document_reader import read_document
+                result = read_document(file_path, save_to_memory=True)
+                
+                if result["success"]:
+                    summary = result.get('summary', '')[:300]
+                    return {
+                        "response": f"📄 **Document read successfully!**\n\n**File:** {result['file_name']}\n**Type:** {result['file_type']}\n**Words:** {result['word_count']}\n\n**Content Preview:**\n```\n{summary}...\n```\n\n✅ Document saved to memory for future reference!",
+                        "actions": [{"type": "read_document", "file_name": result['file_name'], "file_type": result['file_type']}]
+                    }
+                else:
+                    return {"response": f"⚠️ Could not read document: {result.get('error', 'Unknown error')}", "actions": []}
+        
+        # Handle "list my documents" or "show documents"
+        if q in ["list my documents", "show my documents", "show documents", "list documents", "what documents do you have"]:
+            from jarvis.document_reader import list_documents
+            docs = list_documents()
+            
+            if docs:
+                doc_list = "\n".join([f"• {doc.get('file_name', 'Unknown')} ({doc.get('word_count', 0)} words)" for doc in docs[:10]])
+                return {
+                    "response": f"📚 **Your saved documents:**\n\n{doc_list}\n\n💡 You can ask me to search in these documents or get their full content!",
+                    "actions": [{"type": "list_documents", "count": len(docs)}]
+                }
+            else:
+                return {"response": "📚 No documents saved yet. Upload a PDF, Word, Excel, or text file and I'll remember it!", "actions": []}
+        
+        # Handle "search in my documents" or "find in documents"
+        if (q.startswith("search in my documents ") or q.startswith("find in documents ") or 
+            q.startswith("search documents ") or q.startswith("find ")) and len(q) > 20:
+            # Extract search query
+            search_query = None
+            if "search in my documents " in q:
+                search_query = message[22:].strip()
+            elif "find in documents " in q:
+                search_query = message[18:].strip()
+            elif q.startswith("search documents "):
+                search_query = message[17:].strip()
+            elif q.startswith("find ") and len(q) > 10:
+                search_query = message[5:].strip()
+            
+            if search_query:
+                from jarvis.document_reader import search_documents
+                results = search_documents(search_query)
+                
+                if results:
+                    result_text = "\n\n".join([f"**{r['file_name']}** (found {r['match_count']} matches):\n```\n{r['snippet'][:200]}...\n```" for r in results[:5]])
+                    return {
+                        "response": f"🔍 **Search results for '{search_query}':**\n\n{result_text}",
+                        "actions": [{"type": "search_documents", "query": search_query, "results": len(results)}]
+                    }
+                else:
+                    return {"response": f"🔍 No results found for '{search_query}' in your documents. Try a different search term!", "actions": []}
+        
+        # 7. YOUTUBE VIDEO LEARNING
+        # First check if user is asking about learned videos
+        if any(pattern in q for pattern in ["what did you learn", "tell me about the video", "video summary", "what was in the video"]):
+            try:
+                sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'jarvis'))
+                from jarvis.memory import memory
+                notes = memory.get_youtube_notes(limit=1)
+                if notes:
+                    latest = notes[0]
+                    key_points = "\n".join([f"• {point}" for point in latest.get('key_points', [])[:5]])
+                    return {"response": f"🎓 **Latest Learning: {latest.get('title', 'Unknown')}**\n\n**Summary:**\n{latest.get('summary', 'No summary')[:400]}...\n\n**Key Points:**\n{key_points}\n\n🔗 [Watch Video]({latest.get('url', '')})", "actions": [{"type": "youtube_notes", "video_id": latest.get('video_id')}]}
+                else:
+                    return {"response": "📚 I haven't learned from any YouTube videos yet. Send me a video URL to learn from it!", "actions": []}
+            except Exception as e:
+                logger.error(f"YouTube notes error: {e}")
+        
+        youtube_patterns = ["learn from this video", "learn from youtube", "youtube.com/watch", "youtu.be/", "learn from https://"]
+        if any(pattern in q for pattern in youtube_patterns):
+            import re
+            import uuid
+            url_match = re.search(r'(https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)[^\s&]+)', message)
+            if url_match:
+                url = url_match.group(0)
+                task_id = str(uuid.uuid4())[:8]
+                try:
+                    sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'jarvis'))
+                    from jarvis.youtube_learner import learn_from_youtube, youtube_learner
+                    
+                    # Check if yt-dlp is available
+                    if not youtube_learner:
+                        return {"response": "⚠️ YouTube learner not initialized. Check if yt-dlp is installed.", "actions": []}
+                    
+                    # Start progress - 0%
+                    await broadcast_learning_progress(task_id, {
+                        "active": True,
+                        "title": "Initializing...",
+                        "percent": 5,
+                        "status": "Checking video URL...",
+                        "logs": ["Starting..."]
+                    })
+                    
+                    # Start the learning task in background (but in same event loop for WebSocket access)
+                    async def learn_task_with_progress():
+                        try:
+                            # Step 1: Get video info (10%) - use thread to prevent blocking
+                            await broadcast_learning_progress(task_id, {
+                                "active": True,
+                                "title": url[:60] + "...",
+                                "percent": 10,
+                                "status": "Getting video info...",
+                                "logs": ["Fetching video metadata..."]
+                            })
+                            
+                            # Run blocking function in thread
+                            video_info = await asyncio.to_thread(youtube_learner.get_video_info, url)
+                            if not video_info:
+                                await broadcast_learning_progress(task_id, {
+                                    "active": True,
+                                    "title": "Failed",
+                                    "percent": 0,
+                                    "status": "❌ Could not get video info",
+                                    "logs": ["Error: Could not extract video ID"]
+                                })
+                                return
+                            
+                            title = video_info.title
+                            duration = video_info.duration
+                            
+                            # Step 2: Try YouTube transcript API first (FAST! 10-40%)
+                            await broadcast_learning_progress(task_id, {
+                                "active": True,
+                                "title": title[:60],
+                                "percent": 20,
+                                "status": "Fetching YouTube transcript...",
+                                "logs": [f"Video: {title[:50]}...", "Trying YouTube captions API..."]
+                            })
+                            
+                            transcript = await youtube_learner._get_youtube_transcript(url)
+                            
+                            # Step 3: If transcript not available, download audio (40-70%)
+                            audio_path = None
+                            if not transcript or len(transcript) < 50:
+                                await broadcast_learning_progress(task_id, {
+                                    "active": True,
+                                    "title": title[:60],
+                                    "percent": 40,
+                                    "status": f"Downloading audio (this may take 2-3 min)...",
+                                    "logs": ["Captions not available", "Downloading audio..."]
+                                })
+                                
+                                # Run download in thread with timeout
+                                try:
+                                    audio_path = await asyncio.wait_for(
+                                        asyncio.to_thread(youtube_learner.download_audio, url),
+                                        timeout=300  # 5 minute timeout for large videos
+                                    )
+                                except asyncio.TimeoutError:
+                                    logger.warning(f"Audio download timed out for {url}")
+                                    audio_path = None
+                                
+                                if not audio_path:
+                                    await broadcast_learning_progress(task_id, {
+                                        "active": True,
+                                        "title": title[:60],
+                                        "percent": 0,
+                                        "status": "❌ No transcript/captions available",
+                                        "logs": ["Error: No captions and download failed/timeout"]
+                                    })
+                                    return
+                                
+                                # Step 4: Transcribe (70-85%)
+                                await broadcast_learning_progress(task_id, {
+                                    "active": True,
+                                    "title": title[:60],
+                                    "percent": 70,
+                                    "status": "Transcribing audio with Whisper...",
+                                    "logs": ["Download complete", "Transcribing with AI..."]
+                                })
+                                
+                                transcript = youtube_learner.transcribe_audio(audio_path)
+                                
+                                # Cleanup
+                                try:
+                                    if audio_path:
+                                        os.remove(audio_path)
+                                except:
+                                    pass
+                            else:
+                                await broadcast_learning_progress(task_id, {
+                                    "active": True,
+                                    "title": title[:60],
+                                    "percent": 40,
+                                    "status": "✅ YouTube transcript fetched!",
+                                    "logs": ["✅ Got transcript from YouTube captions!"]
+                                })
+                            
+                            if not transcript or len(transcript) < 50:
+                                await broadcast_learning_progress(task_id, {
+                                    "active": True,
+                                    "title": title[:60],
+                                    "percent": 0,
+                                    "status": "❌ No transcript available",
+                                    "logs": ["Error: Could not extract transcript"]
+                                })
+                                return
+                            
+                            # Step 5: Summarize (85-95%)
+                            await broadcast_learning_progress(task_id, {
+                                "active": True,
+                                "title": title[:60],
+                                "percent": 85,
+                                "status": "Creating notes with AI...",
+                                "logs": ["Transcript ready", "Summarizing with AI..."]
+                            })
+                            
+                            notes = await youtube_learner.summarize_transcript(transcript, video_info)
+                            
+                            # Step 6: Save to memory (95-100%)
+                            await broadcast_learning_progress(task_id, {
+                                "active": True,
+                                "title": title[:60],
+                                "percent": 95,
+                                "status": "Saving to memory...",
+                                "logs": ["Summary created", "Saving to memory..."]
+                            })
+                            
+                            if youtube_learner.memory:
+                                youtube_learner._save_to_memory(notes)
+                            
+                            # Complete!
+                            await broadcast_learning_progress(task_id, {
+                                "active": True,
+                                "title": title[:60],
+                                "percent": 100,
+                                "status": f"✅ Learned: {title[:40]}",
+                                "logs": ["✅ Done!", f"Key points: {len(notes.key_points)}", "Saved to memory!"]
+                            })
+                            
+                            # Keep visible for 10 seconds then clear
+                            await asyncio.sleep(10)
+                            await broadcast_learning_progress(task_id, {
+                                "active": False,
+                                "title": "",
+                                "percent": 0,
+                                "status": "",
+                                "logs": []
+                            })
+                            
+                        except Exception as e:
+                            logger.exception(f"Learning task failed: {e}")
+                            await broadcast_learning_progress(task_id, {
+                                "active": True,
+                                "title": "Error",
+                                "percent": 0,
+                                "status": f"❌ Error: {str(e)[:50]}",
+                                "logs": [f"Error: {str(e)}"]
+                            })
+                    
+                    # Start the background task (in same event loop)
+                    asyncio.create_task(learn_task_with_progress())
+                    
+                    return {
+                        "response": f"🎓 **Learning started!**\n\nAnalyzing: {url}\n\n📊 Watch the progress bar in the bottom-right corner!\n\n💡 You can continue chatting while I learn from this video.",
+                        "actions": [{"type": "youtube_learn", "url": url, "task_id": task_id}]
+                    }
+                except Exception as e:
+                    logger.error(f"YouTube error: {e}")
+                    return {"response": f"⚠️ YouTube learning error: {str(e)}", "actions": []}
+        
+        # 8. WEB BROWSER
+        if any(pattern in q for pattern in ["visit page", "visit website", "https://"]):
+            import re
+            url_match = re.search(r'(https?://[^\s]+)', message)
+            if url_match:
+                url = url_match.group(0)
+                try:
+                    sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'jarvis'))
+                    from jarvis.web_browser import visit_page
+                    content = await visit_page(url)
+                    if content:
+                        preview = content.text[:1200] if len(content.text) > 1200 else content.text
+                        return {"response": f"🌐 **{content.title}**\n\n{preview}{'...' if len(content.text) > 1200 else ''}", "actions": [{"type": "web_visit", "url": url}]}
+                except Exception as e:
+                    logger.error(f"Web error: {e}")
+        
+        # 9. SHOPPING
+        shopping_keywords = ["buy ", "purchase ", "find cheapest", "lowest price", "compare prices", "shopping for"]
+        if any(q.startswith(kw) or kw in q for kw in shopping_keywords):
+            product = message
+            for prefix in ["buy ", "purchase ", "find cheapest ", "shopping for ", "looking for "]:
+                if product.lower().startswith(prefix):
+                    product = product[len(prefix):].strip()
+                    break
+            if product and len(product) > 2:
+                try:
+                    sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'jarvis'))
+                    from jarvis.shopping import shopping_assistant, search_product
+                    
+                    # Broadcast start
+                    await broadcast_shopping_progress(product, "searching", "Starting search...")
+                    
+                    # Search with platform updates
+                    platforms = ['amazon', 'flipkart', 'myntra', 'meesho', 'shopsy']
+                    all_products = []
+                    searched_platforms = []
+                    
+                    for platform in platforms:
+                        try:
+                            await broadcast_shopping_progress(product, "searching", platform.capitalize())
+                            
+                            if platform == 'amazon':
+                                amazon_products = await shopping_assistant.search_amazon(product)
+                                all_products.extend(amazon_products)
+                                if amazon_products:
+                                    searched_platforms.append('Amazon')
+                                    await broadcast_shopping_progress(product, "found", "Amazon", len(amazon_products))
+                            elif platform == 'flipkart':
+                                flipkart_products = await shopping_assistant.search_flipkart(product)
+                                all_products.extend(flipkart_products)
+                                if flipkart_products:
+                                    searched_platforms.append('Flipkart')
+                                    await broadcast_shopping_progress(product, "found", "Flipkart", len(flipkart_products))
+                            else:
+                                products = await shopping_assistant.search_simple_platform(product, platform)
+                                all_products.extend(products)
+                                if products:
+                                    searched_platforms.append(platform.capitalize())
+                                    await broadcast_shopping_progress(product, "found", platform.capitalize(), len(products))
+                        except Exception as e:
+                            logger.warning(f"Platform {platform} search failed: {e}")
+                            continue
+                    
+                    # Create result
+                    from jarvis.shopping import ShoppingResult
+                    result = ShoppingResult(
+                        query=product,
+                        products=all_products,
+                        total_found=len(all_products),
+                        platforms_searched=searched_platforms,
+                    )
+                    
+                    # Broadcast complete
+                    await broadcast_shopping_progress(product, "completed", "", len(all_products))
+                    
+                    formatted = shopping_assistant.format_results(result, min_rating=4.0, limit=5)
+                    return {"response": formatted, "actions": [{"type": "shopping", "query": product}]}
+                except Exception as e:
+                    logger.error(f"Shopping error: {e}")
+                    await broadcast_shopping_progress(product, "error", str(e)[:50])
+        
         # === LLM FOR ALL OTHER CONVERSATION ===
         try:
             if self.llm and self.llm.client:
-                llm_response = self.llm.chat(message)
+                # Build context from memory
+                memory_context = ""
+                try:
+                    from jarvis.memory import memory
+                    # Get recent conversations
+                    recent = memory.get_recent_conversations(limit=3)
+                    if recent:
+                        memory_context = "\nRecent conversation context:\n"
+                        for conv in recent:
+                            memory_context += f"- {conv.get('summary', '')}\n"
+                    
+                    # Get relevant preferences
+                    prefs = memory.get_all_preferences()
+                    if prefs:
+                        memory_context += "\nUser preferences:\n"
+                        for key, value in list(prefs.items())[:5]:
+                            memory_context += f"- {key}: {value}\n"
+                except Exception as e:
+                    logger.debug(f"Could not load memory context: {e}")
+                
+                # Enhance message with context
+                enhanced_message = message
+                if memory_context:
+                    enhanced_message = f"{memory_context}\n\nCurrent message: {message}"
+                
+                llm_response = self.llm.chat(enhanced_message)
                 
                 # New format: LLM returns dict with text and actions
                 if isinstance(llm_response, dict):
@@ -1098,9 +1500,24 @@ class JarvisCore:
                 
                 # Fallback for old string format
                 elif isinstance(llm_response, str):
-                    return {"response": llm_response, "actions": []}
+                    response_text = llm_response
                 else:
-                    return {"response": str(llm_response), "actions": []}
+                    response_text = str(llm_response)
+                
+                # Save conversation to memory
+                try:
+                    from jarvis.memory import memory
+                    summary = f"User: {message[:50]}... | Assistant: {response_text[:50]}..."
+                    topics = ["conversation"]
+                    if any(word in message.lower() for word in ["weather", "time", "date"]):
+                        topics.append("general_info")
+                    if any(word in message.lower() for word in ["file", "document", "pdf", "doc"]):
+                        topics.append("documents")
+                    memory.save_conversation(summary, topics, importance=2)
+                except Exception as e:
+                    logger.debug(f"Could not save conversation: {e}")
+                
+                return {"response": response_text, "actions": []}
                     
             else:
                 # LLM not available - use fallback
@@ -1529,51 +1946,76 @@ class JarvisCore:
             return {"response": f"Couldn't analyze image: {e}", "actions": []}
 
     async def _handle_file_analysis(self, file_bytes: bytes, filename: str, file_type: str, question: str) -> Dict[str, Any]:
-        """Analyze uploaded files (PDFs, text, etc.)"""
+        """Analyze uploaded files (PDFs, text, Word, etc.) - actually extracts content"""
         try:
+            import os
+            import tempfile
+            from jarvis.document_reader import read_document
+            
             file_size = len(file_bytes)
             size_kb = file_size / 1024
             
-            response = f"📄 **File Analysis: {filename}**\n\n"
-            response += f"**Size:** {size_kb:.2f} KB\n"
-            response += f"**Type:** {file_type or 'Unknown'}\n\n"
+            # Save bytes to temp file for reading
+            with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(filename)[1]) as tmp:
+                tmp.write(file_bytes)
+                tmp_path = tmp.name
             
-            # Try to extract text content
-            text_content = ""
-            
-            if file_type and 'text' in file_type:
+            try:
+                # Read the document using document_reader
+                result = read_document(tmp_path, save_to_memory=True)
+                
+                if result["success"]:
+                    content = result.get("content", "")
+                    word_count = result.get("word_count", 0)
+                    
+                    response = f"📄 **Document Read: {filename}**\n\n"
+                    response += f"**Size:** {size_kb:.2f} KB\n"
+                    response += f"**Type:** {file_type or result.get('file_type', 'Unknown')}\n"
+                    response += f"**Words:** {word_count}\n\n"
+                    
+                    # Show content preview
+                    preview = content[:1000] + ("..." if len(content) > 1000 else "")
+                    response += f"**Content Preview:**\n```\n{preview}\n```\n\n"
+                    
+                    response += f"✅ Document saved to memory! Ask me to search or analyze this content."
+                    
+                    return {
+                        "response": response,
+                        "actions": [{"type": "read_document", "file_name": filename, "word_count": word_count}],
+                        "suggestions": ["Summarize content", "Search in document", "Extract specific data", "Analyze key points"]
+                    }
+                else:
+                    # Failed to read content, fallback to basic info
+                    response = f"📄 **File Analysis: {filename}**\n\n"
+                    response += f"**Size:** {size_kb:.2f} KB\n"
+                    response += f"**Type:** {file_type or 'Unknown'}\n\n"
+                    response += f"⚠️ Could not extract content: {result.get('error', 'Unknown error')}\n\n"
+                    
+                    # Try basic text decode as fallback
+                    if 'text' in (file_type or '') or filename.endswith(('.txt', '.md', '.csv', '.json')):
+                        try:
+                            text = file_bytes.decode('utf-8', errors='ignore')[:1000]
+                            response += f"**Content Preview (fallback):**\n```\n{text[:500]}...\n```\n\n"
+                        except:
+                            pass
+                    
+                    response += f"💡 **Question:** \"{question}\"\n\nI can see the file details but couldn't extract full content."
+                    
+                    return {
+                        "response": response,
+                        "suggestions": ["Try different format", "Check file permissions", "Upload as text file"]
+                    }
+                    
+            finally:
+                # Clean up temp file
                 try:
-                    text_content = file_bytes.decode('utf-8', errors='ignore')[:2000]
-                    response += "**Content Preview:**\n```\n"
-                    response += text_content[:500] + ("..." if len(text_content) > 500 else "")
-                    response += "\n```\n\n"
+                    os.unlink(tmp_path)
                 except:
                     pass
-            
-            elif filename.endswith('.pdf'):
-                response += "📑 **PDF Document**\n"
-                response += "This is a PDF file. To extract text content, you can use tools like PyPDF2 or pdfplumber.\n\n"
-            
-            elif filename.endswith(('.py', '.js', '.html', '.css', '.java', '.cpp', '.c')):
-                try:
-                    code = file_bytes.decode('utf-8', errors='ignore')[:1500]
-                    lines = code.count('\n')
-                    response += f"💻 **Code File ({lines} lines)**\n\n```\n{code[:400]}...\n```\n\n"
-                except:
-                    pass
-            
-            response += f"💡 **About your question:** \"{question}\"\n\n"
-            response += "I can see the file details above. For deeper analysis of specific content, "
-            response += "please let me know what you're looking for!"
-            
-            return {
-                "response": response,
-                "suggestions": ["Summarize content", "Extract specific data", "Convert format", "Analyze structure"]
-            }
-            
+                    
         except Exception as e:
-            logger.error(f"File analysis error: {e}")
-            return {"response": f"Couldn't analyze file: {e}", "actions": []}
+            logger.exception(f"File analysis error: {e}")
+            return {"response": f"❌ Couldn't analyze file: {e}", "actions": []}
 
     async def _execute_single_task(self, command: str, session_id: str = "default") -> Dict[str, Any]:
         """Execute PC control commands"""
@@ -2046,37 +2488,55 @@ async def upload_document(
     """
     try:
         from jarvis.document_reader import read_document
+        import os
         
-        # Create uploads directory if not exists
-        uploads_dir = Path("uploads")
+        logger.info(f"📤 Upload started: {file.filename}, content_type={file.content_type}")
+        
+        # Create uploads directory if not exists (use absolute path)
+        uploads_dir = Path(os.path.dirname(os.path.abspath(__file__))) / "uploads"
         uploads_dir.mkdir(exist_ok=True)
+        logger.info(f"Uploads directory: {uploads_dir}")
         
         # Save uploaded file
         file_path = uploads_dir / file.filename
+        file_content = await file.read()
+        
+        logger.info(f"File size received: {len(file_content)} bytes")
+        
         with open(file_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
+            f.write(file_content)
+        
+        # Verify file was saved
+        if not file_path.exists():
+            raise Exception("File was not saved properly")
+        
+        saved_size = os.path.getsize(file_path)
+        logger.info(f"File saved: {file_path}, size: {saved_size} bytes")
         
         # Read the document
-        result = read_document(str(file_path), save_to_memory=save_to_memory)
+        logger.info(f"Starting document read: {file_path}")
+        result = read_document(str(file_path.absolute()), save_to_memory=save_to_memory)
         
         # Add upload info to result
         result["uploaded"] = True
         result["original_filename"] = file.filename
+        result["saved_path"] = str(file_path.absolute())
+        result["saved_size"] = saved_size
         
         if result["success"]:
-            logger.info(f"📄 Document uploaded and read: {file.filename} ({result.get('word_count', 0)} words)")
+            logger.info(f"✅ Document uploaded and read: {file.filename} ({result.get('word_count', 0)} words, {result.get('content_length', 0)} chars)")
         else:
-            logger.warning(f"⚠️ Document upload failed: {result.get('error', 'Unknown error')}")
+            logger.warning(f"⚠️ Document read failed: {result.get('error', 'Unknown error')}")
         
         return result
         
     except Exception as e:
-        logger.error(f"Error uploading document: {e}")
+        logger.exception(f"❌ Error uploading document: {e}")
         return {
             "success": False,
             "error": f"Upload failed: {str(e)}",
-            "uploaded": False
+            "uploaded": False,
+            "traceback": str(e)
         }
 
 @app.post("/api/documents/read")
@@ -2171,6 +2631,73 @@ async def get_document_content(file_name: str):
         logger.error(f"Error getting document content: {e}")
         return {"status": "error", "error": str(e)}
 
+@app.get("/api/documents/debug")
+async def debug_uploaded_files():
+    """Debug endpoint to check uploaded files"""
+    try:
+        import os
+        uploads_dir = Path(os.path.dirname(os.path.abspath(__file__))) / "uploads"
+        
+        if not uploads_dir.exists():
+            return {
+                "status": "no_uploads_dir",
+                "path": str(uploads_dir),
+                "files": []
+            }
+        
+        files = []
+        for f in uploads_dir.iterdir():
+            if f.is_file():
+                stat = f.stat()
+                files.append({
+                    "name": f.name,
+                    "size": stat.st_size,
+                    "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    "path": str(f.absolute())
+                })
+        
+        return {
+            "status": "ok",
+            "uploads_path": str(uploads_dir),
+            "files_count": len(files),
+            "files": files
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+@app.get("/api/documents/test-read")
+async def test_read_document(file_path: str):
+    """Test endpoint to directly read a document and see full debug info"""
+    try:
+        import os
+        from jarvis.document_reader import read_document
+        
+        # Check if file exists
+        exists = os.path.exists(file_path)
+        size = os.path.getsize(file_path) if exists else 0
+        
+        # Try to read
+        result = read_document(file_path, save_to_memory=False)
+        
+        return {
+            "status": "test_complete",
+            "input_path": file_path,
+            "file_exists": exists,
+            "file_size": size,
+            "read_success": result.get("success"),
+            "read_error": result.get("error"),
+            "content_length": result.get("content_length"),
+            "content_preview": result.get("content", "")[:200] if result.get("content") else None,
+            "full_result": result
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "status": "exception",
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
 @app.get("/api/system-stats")
 async def system_stats():
     """Get system statistics"""
@@ -2240,6 +2767,56 @@ async def broadcast_system_stats():
             # Remove disconnected clients
             connected_clients.difference_update(disconnected)
         await asyncio.sleep(2)  # Update every 2 seconds
+
+# Learning progress tracking
+learning_tasks: Dict[str, Dict[str, Any]] = {}
+
+async def broadcast_learning_progress(task_id: str, progress: Dict[str, Any]):
+    """Broadcast learning progress to all connected clients"""
+    if not connected_clients:
+        return
+    
+    message = {
+        "type": "learning_progress",
+        "payload": {
+            "task_id": task_id,
+            **progress
+        }
+    }
+    
+    disconnected = set()
+    for client in connected_clients:
+        try:
+            await client.send_json(message)
+        except:
+            disconnected.add(client)
+    
+    connected_clients.difference_update(disconnected)
+
+async def broadcast_shopping_progress(query: str, status: str, platform: str = "", results_count: int = 0):
+    """Broadcast shopping search progress to all connected clients"""
+    if not connected_clients:
+        return
+    
+    message = {
+        "type": "shopping_progress",
+        "payload": {
+            "query": query,
+            "status": status,  # "searching", "found", "completed", "error"
+            "platform": platform,  # "Amazon", "Flipkart", etc.
+            "results_count": results_count,
+            "timestamp": datetime.now().isoformat(),
+        }
+    }
+    
+    disconnected = set()
+    for client in connected_clients:
+        try:
+            await client.send_json(message)
+        except:
+            disconnected.add(client)
+    
+    connected_clients.difference_update(disconnected)
 
 @app.on_event("startup")
 async def start_broadcast():

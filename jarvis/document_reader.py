@@ -79,9 +79,10 @@ class DocumentReader:
                 content = self._read_text(file_path)
             
             if not content or content.strip() == "":
+                logger.warning(f"Empty content extracted from {file_path}")
                 return {
                     "success": False,
-                    "error": "Could not extract content from file (empty or corrupted)",
+                    "error": f"Could not extract content from file (empty or corrupted). File type: {ext}, path: {file_path}",
                     "content": ""
                 }
             
@@ -101,9 +102,12 @@ class DocumentReader:
                 "lines": content.count('\n') + 1
             }
             
-            # Save to memory if requested
+            # Save to memory if requested (only if explicitly asked to learn/save)
             if save_to_memory:
-                self._save_to_memory(result)
+                from jarvis.intent_classifier import should_save
+                # Only save if user explicitly wants to save
+                # The calling code should determine this based on intent
+                pass  # Saving is now handled by intent classifier in main.py
             
             return result
             
@@ -115,16 +119,131 @@ class DocumentReader:
                 "content": ""
             }
     
+    def read_document_clean(self, file_path: str, user_request: str = "") -> str:
+        """Read document and return ONLY content, no metadata.
+        
+        Args:
+            file_path: Path to document
+            user_request: What user asked for (to extract specific parts)
+            
+        Returns:
+            Clean content string only
+        """
+        result = self.read_document(file_path, save_to_memory=False)
+        
+        if not result.get("success"):
+            return f"Error: {result.get('error', 'Could not read file')}"
+        
+        content = result.get("content", "")
+        
+        # If user asked for specific things, try to extract
+        user_lower = user_request.lower()
+        
+        # Extract only code if requested
+        if any(word in user_lower for word in ["code", "program", "script", "function"]):
+            return self._extract_code_sections(content)
+        
+        # Extract only summary if requested
+        if any(word in user_lower for word in ["summary", "summarize", "overview", "brief"]):
+            return self._summarize_content(content)
+        
+        # Extract specific sections
+        if any(word in user_lower for word in ["heading", "title", "section"]):
+            return self._extract_headings(content)
+        
+        # Return full content without metadata prefix/suffix
+        return content
+    
+    def _extract_code_sections(self, content: str) -> str:
+        """Extract code blocks from content."""
+        import re
+        
+        # Match code blocks
+        code_patterns = [
+            r'```[\w]*\n(.*?)```',
+            r'`([^`]+)`',
+        ]
+        
+        all_code = []
+        for pattern in code_patterns:
+            matches = re.findall(pattern, content, re.DOTALL)
+            all_code.extend(matches)
+        
+        if all_code:
+            return "\n\n--- Code Section ---\n\n".join(all_code)
+        
+        # If no code blocks found, return lines that look like code
+        lines = content.split('\n')
+        code_lines = []
+        for line in lines:
+            # Heuristic: lines with common code patterns
+            if any(pattern in line for pattern in ['def ', 'class ', 'import ', 'function', 'var ', 'const ', 'let ']):
+                code_lines.append(line)
+        
+        if code_lines:
+            return "\n".join(code_lines)
+        
+        return content  # Return full content if no code found
+    
+    def _summarize_content(self, content: str) -> str:
+        """Create a simple summary of content."""
+        lines = content.split('\n')
+        
+        # Get first paragraph that looks like summary (not too short, not too long)
+        for line in lines:
+            line = line.strip()
+            if len(line) > 50 and len(line) < 500:
+                return line
+        
+        # Fallback: first 300 chars
+        return content[:300] + "..." if len(content) > 300 else content
+    
+    def _extract_headings(self, content: str) -> str:
+        """Extract headings from content."""
+        import re
+        
+        # Match markdown headings
+        heading_pattern = r'^(#{1,6})\s+(.+)$'
+        matches = re.findall(heading_pattern, content, re.MULTILINE)
+        
+        if matches:
+            return "\n".join([f"{'  ' * (len(h) - 1)}{text}" for h, text in matches])
+        
+        # Try other patterns (all caps lines, underlined, etc.)
+        lines = content.split('\n')
+        headings = []
+        for line in lines:
+            line = line.strip()
+            # Heuristic: short lines, all caps, or followed by ===/---
+            if line and len(line) < 100 and (line.isupper() or line.endswith(':')):
+                headings.append(line)
+        
+        if headings:
+            return "\n".join(headings)
+        
+        return "No headings found in document."
+    
     def _read_text(self, file_path: str) -> str:
         """Read plain text files."""
         try:
+            import os
+            logger.info(f"Reading text file: {file_path}, exists={os.path.exists(file_path)}, size={os.path.getsize(file_path) if os.path.exists(file_path) else 0}")
+            
             # Try UTF-8 first
             with open(file_path, 'r', encoding='utf-8') as f:
-                return f.read()
+                content = f.read()
+                logger.info(f"Successfully read {len(content)} characters")
+                return content
         except UnicodeDecodeError:
+            logger.warning(f"UTF-8 failed, trying latin-1 for {file_path}")
             # Fall back to latin-1
             with open(file_path, 'r', encoding='latin-1') as f:
-                return f.read()
+                content = f.read()
+                logger.info(f"Successfully read {len(content)} characters with latin-1")
+                return content
+        except Exception as e:
+            logger.error(f"Error reading text file: {e}")
+            raise
     
     def _read_pdf(self, file_path: str) -> str:
         """Extract text from PDF using PyPDF2."""
@@ -166,17 +285,29 @@ class DocumentReader:
     def _read_word(self, file_path: str) -> str:
         """Extract text from Word documents."""
         try:
-            from docx import Document
+            import os
+            logger.info(f"Reading Word document: {file_path}, exists={os.path.exists(file_path)}, size={os.path.getsize(file_path) if os.path.exists(file_path) else 0}")
+            
+            try:
+                from docx import Document
+            except ImportError as ie:
+                logger.error(f"python-docx not installed: {ie}")
+                return "[ERROR: python-docx library not installed. Run: pip install python-docx]"
             
             doc = Document(file_path)
             text_parts = []
             
             # Extract paragraphs
+            para_count = 0
             for para in doc.paragraphs:
                 if para.text.strip():
                     text_parts.append(para.text)
+                    para_count += 1
+            
+            logger.info(f"Extracted {para_count} paragraphs from Word document")
             
             # Extract tables
+            table_count = 0
             for table in doc.tables:
                 table_text = []
                 for row in table.rows:
@@ -184,13 +315,24 @@ class DocumentReader:
                     table_text.append(" | ".join(row_text))
                 if table_text:
                     text_parts.append("\n[Table]\n" + "\n".join(table_text) + "\n[/Table]")
+                    table_count += 1
             
-            return "\n\n".join(text_parts)
+            logger.info(f"Extracted {table_count} tables from Word document")
             
-        except ImportError:
-            return "[Word support not available. Install python-docx: pip install python-docx]"
+            full_text = "\n\n".join(text_parts)
+            logger.info(f"Total Word document content: {len(full_text)} characters")
+            
+            if not full_text.strip():
+                return "[Document appears to be empty or contains no readable text]"
+            
+            return full_text
+            
+        except ImportError as e:
+            logger.error(f"Import error for Word reading: {e}")
+            return f"[ERROR: {str(e)} - Install python-docx: pip install python-docx]"
         except Exception as e:
-            return f"[Error reading Word document: {str(e)}]"
+            logger.exception(f"Error reading Word document: {e}")
+            return f"[ERROR reading Word document: {str(e)}]"
     
     def _read_excel(self, file_path: str) -> str:
         """Extract text from Excel files."""

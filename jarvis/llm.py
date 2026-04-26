@@ -127,6 +127,7 @@ class JarvisLLM:
             if extra_messages:
                 messages.extend(extra_messages)
 
+            logger.info(f"Using GROQ model: {config.GROQ_MODEL}")
             completion = self.client.chat.completions.create(
                 model=config.GROQ_MODEL,
                 messages=messages,
@@ -139,17 +140,40 @@ class JarvisLLM:
         except Exception as exc:
             error_msg = str(exc).lower()
             
+            # Check if it's a token/payload too large error - trim history and retry
+            is_token_limit = any(x in error_msg for x in ['payload too large', '413', 'too large', 'tokens per minute'])
+            if is_token_limit and len(self.history) > 2:
+                logger.warning(f"Token limit hit ({len(self.history)} history entries), trimming oldest messages...")
+                # Keep only last 2 exchanges (4 messages) + system prompt
+                self.history = self.history[-4:] if len(self.history) >= 4 else self.history[-2:]
+                return self._call_groq(extra_messages, retry_count)
+            
             # Check if it's a rate limit or auth error that might be fixed by rotating keys
             is_rate_limit = any(x in error_msg for x in ['rate limit', '429', 'quota', 'insufficient', 'credits'])
             is_auth_error = any(x in error_msg for x in ['auth', 'api key', 'invalid', 'unauthorized', '401', '403'])
             
+            # Try rotating to next API key if any error occurs (rate limit, auth, etc.)
             if (is_rate_limit or is_auth_error) and retry_count < len(self.api_keys):
-                logger.warning(f"API key {self.current_key_index + 1} failed ({'rate limit' if is_rate_limit else 'auth error'}), rotating...")
+                logger.warning(f"API key {self.current_key_index + 1} failed, rotating to next key...")
                 if self._rotate_api_key():
                     # Retry with new key
                     return self._call_groq(extra_messages, retry_count + 1)
             
-            logger.exception("Groq call failed")
+            logger.warning("All Groq API keys failed, trying Gemini fallback...")
+            
+            # Fallback to Gemini
+            gemini_result = self._call_gemini(extra_messages)
+            if not gemini_result.startswith("❌"):
+                return gemini_result
+            
+            logger.warning("Gemini failed, trying OpenRouter fallback...")
+            
+            # Fallback to OpenRouter
+            openrouter_result = self._call_openrouter(extra_messages)
+            if not openrouter_result.startswith("❌"):
+                return openrouter_result
+            
+            logger.exception("All AI providers failed")
 
             # Return a short error string so you can immediately see if this is a
             # model name problem, auth issue, rate limit, network error, etc.
@@ -157,6 +181,79 @@ class JarvisLLM:
             if len(msg) > 300:
                 msg = msg[:300] + "..."
             return f"LLM backend error: {msg}"
+
+    def _call_gemini(self, extra_messages: list[dict[str, str]] | None = None) -> str:
+        """Fallback to Gemini when Groq fails."""
+        try:
+            import google.generativeai as genai
+            
+            gemini_key = os.getenv("GEMINI_API_KEY", "")
+            if not gemini_key:
+                return "❌ Gemini API key not configured"
+            
+            genai.configure(api_key=gemini_key)
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            
+            # Build prompt from history
+            messages = [{"role": "system", "content": config.SYSTEM_PROMPT}]
+            messages.extend(self.history)
+            if extra_messages:
+                messages.extend(extra_messages)
+            
+            # Convert to Gemini format
+            prompt = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
+            
+            response = model.generate_content(prompt)
+            content = response.text.strip() if response.text else ""
+            
+            logger.info("Successfully used Gemini as fallback")
+            return content if content else "Gemini returned empty response"
+            
+        except Exception as e:
+            logger.exception("Gemini fallback failed")
+            return f"❌ Gemini fallback failed: {str(e)[:200]}"
+
+    def _call_openrouter(self, extra_messages: list[dict[str, str]] | None = None) -> str:
+        """Fallback to OpenRouter when Groq and Gemini fail."""
+        try:
+            openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
+            if not openrouter_key:
+                return "❌ OpenRouter API key not configured"
+            
+            messages: list[dict[str, str]] = [{"role": "system", "content": config.SYSTEM_PROMPT}]
+            messages.extend(self.history)
+            if extra_messages:
+                messages.extend(extra_messages)
+            
+            response = httpx.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {openrouter_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "http://localhost:3000",
+                    "X-Title": "JARVIS"
+                },
+                json={
+                    "model": "openai/gpt-3.5-turbo",
+                    "messages": messages,
+                    "temperature": config.GROQ_TEMPERATURE,
+                    "max_tokens": config.GROQ_MAX_TOKENS,
+                },
+                timeout=60.0
+            )
+            
+            data = response.json()
+            if response.status_code != 200:
+                error = data.get('error', {}).get('message', 'Unknown OpenRouter error')
+                return f"❌ OpenRouter error: {error}"
+            
+            content = data.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
+            logger.info("Successfully used OpenRouter as fallback")
+            return content if content else "OpenRouter returned empty response"
+            
+        except Exception as e:
+            logger.exception("OpenRouter fallback failed")
+            return f"❌ OpenRouter fallback failed: {str(e)[:200]}"
 
     def _extract_tool_call(self, text: str) -> dict | None:
         """Extract and validate a tool call JSON object from model output."""

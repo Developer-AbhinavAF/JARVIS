@@ -31,6 +31,14 @@ openpyxl==3.1.2
 
 # Browser Automation (optional plugin)
 selenium==4.20.0
+playwright==1.40.0
+
+# YouTube Learning
+yt-dlp==2023.12.30
+youtube-transcript-api==0.6.2
+
+# Web Scraping for Shopping
+playwright==1.40.0
 
 # Local LLM (optional plugin)
 llama-cpp-python==0.2.65; platform_machine=='x86_64'

@@ -37,9 +37,11 @@ TAVILY_API_KEY: str = os.getenv("TAVILY_API_KEY")
 # LLM SETTINGS
 # =====================
 
+# Using llama-3.1-8b-instant with 6K tokens/min limit
+# For better availability, rotate through multiple keys
 GROQ_MODEL: str = "llama-3.1-8b-instant"
 GROQ_TEMPERATURE: float = 0.7
-GROQ_MAX_TOKENS: int = 1024
+GROQ_MAX_TOKENS: int = 512  # Reduced to save tokens and manage limits better
 
 # =====================
 # STT (Speech-to-Text)

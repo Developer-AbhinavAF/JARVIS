@@ -34,9 +34,19 @@ interface StoreState {
   activeTab: string;
   setActiveTab: (tab: string) => void;
 
+  // Expand Modes: 'normal' | 'half' | 'full'
+  chatExpandMode: 'normal' | 'half' | 'full';
+  setChatExpandMode: (mode: 'normal' | 'half' | 'full') => void;
+  cycleExpandMode: () => void;
+
   // Input for chat
   input: string;
   setInput: (text: string) => void;
+
+  // File Previews
+  filePreviews: Record<string, { url: string; type: string; size: number }>;
+  addFilePreview: (id: string, preview: { url: string; type: string; size: number }) => void;
+  removeFilePreview: (id: string) => void;
 
   // Memory
   todos: Todo[];
@@ -51,6 +61,30 @@ interface StoreState {
   deleteNote: (id: string) => void;
   addReminder: (reminder: Omit<Reminder, 'id'>) => void;
   deleteReminder: (id: string) => void;
+
+  // Learning Progress
+  learningProgress: {
+    active: boolean;
+    taskId: string | null;
+    title: string;
+    percent: number;
+    status: string;
+    logs: string[];
+  };
+  setLearningProgress: (progress: Partial<StoreState['learningProgress']>) => void;
+  clearLearningProgress: () => void;
+
+  // Shopping Progress
+  shoppingProgress: {
+    active: boolean;
+    query: string;
+    status: string; // "searching", "found", "completed", "error"
+    platform: string;
+    resultsCount: number;
+    lastUpdate: string;
+  };
+  setShoppingProgress: (progress: Partial<StoreState['shoppingProgress']>) => void;
+  clearShoppingProgress: () => void;
 }
 
 export const useStore = create<StoreState>()(
@@ -171,9 +205,33 @@ export const useStore = create<StoreState>()(
       activeTab: 'home',
       setActiveTab: (tab) => set({ activeTab: tab }),
 
+      // Expand Modes
+      chatExpandMode: 'normal',
+      setChatExpandMode: (mode) => set({ chatExpandMode: mode }),
+      cycleExpandMode: () => {
+        const modes: ('normal' | 'half' | 'full')[] = ['normal', 'half', 'full'];
+        const current = get().chatExpandMode;
+        const nextIndex = (modes.indexOf(current) + 1) % modes.length;
+        set({ chatExpandMode: modes[nextIndex] });
+      },
+
       // Input for chat
       input: '',
       setInput: (text) => set({ input: text }),
+
+      // File Previews
+      filePreviews: {},
+      addFilePreview: (id, preview) => {
+        set((state) => ({
+          filePreviews: { ...state.filePreviews, [id]: preview },
+        }));
+      },
+      removeFilePreview: (id) => {
+        set((state) => {
+          const { [id]: _, ...rest } = state.filePreviews;
+          return { filePreviews: rest };
+        });
+      },
 
       // Memory
       todos: [],
@@ -233,6 +291,60 @@ export const useStore = create<StoreState>()(
           reminders: state.reminders.filter((r) => r.id !== id),
         }));
       },
+
+      // Learning Progress
+      learningProgress: {
+        active: false,
+        taskId: null,
+        title: '',
+        percent: 0,
+        status: '',
+        logs: [],
+      },
+      setLearningProgress: (progress) => {
+        set((state) => ({
+          learningProgress: { ...state.learningProgress, ...progress },
+        }));
+      },
+      clearLearningProgress: () => {
+        set({
+          learningProgress: {
+            active: false,
+            taskId: null,
+            title: '',
+            percent: 0,
+            status: '',
+            logs: [],
+          },
+        });
+      },
+
+      // Shopping Progress
+      shoppingProgress: {
+        active: false,
+        query: '',
+        status: '',
+        platform: '',
+        resultsCount: 0,
+        lastUpdate: '',
+      },
+      setShoppingProgress: (progress) => {
+        set((state) => ({
+          shoppingProgress: { ...state.shoppingProgress, ...progress },
+        }));
+      },
+      clearShoppingProgress: () => {
+        set({
+          shoppingProgress: {
+            active: false,
+            query: '',
+            status: '',
+            platform: '',
+            resultsCount: 0,
+            lastUpdate: '',
+          },
+        });
+      },
     }),
     {
       name: 'jarvis-storage',
@@ -243,6 +355,7 @@ export const useStore = create<StoreState>()(
         reminders: state.reminders,
         sessions: state.sessions,
         activeTab: state.activeTab,
+        chatExpandMode: state.chatExpandMode,
       }),
     }
   )

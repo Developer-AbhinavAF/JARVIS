@@ -12,13 +12,27 @@ import LogsSection from '@/components/LogsSection';
 import HomeSection from '@/components/HomeSection';
 import SettingsSection from '@/components/SettingsSection';
 import DocsSection from '@/components/DocsSection';
+import LoadingScreen from '@/components/LoadingScreen';
+import LearningProgress from '@/components/LearningProgress';
+import ShoppingProgress from '@/components/ShoppingProgress';
 import { useStore } from '@/store/useStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { Mic, MicOff, Send } from 'lucide-react';
 
 function App() {
-  const { setIsListening, setSystemStats, setIsConnected, activeTab, addMessage, setIsTyping, mode: currentMode, toggleMode } = useStore();
+  const { setIsListening, setSystemStats, setIsConnected, setLearningProgress, setShoppingProgress, activeTab, addMessage, setIsTyping, mode: currentMode, toggleMode, chatExpandMode } = useStore();
+  
+  // Loading state
+  const [isLoading, setIsLoading] = useState(true);
+  
+  // Auto-hide states - start collapsed by default
+  const sidebarCollapsed = true;
+  const rightPanelCollapsed = true;
+  const bottomBarCollapsed = true;
+  const [isHoveringSidebar, setIsHoveringSidebar] = useState(false);
+  const [isHoveringRightPanel, setIsHoveringRightPanel] = useState(false);
+  const [isHoveringBottomBar, setIsHoveringBottomBar] = useState(false);
   const { lastMessage, isConnected } = useWebSocket('ws://localhost:8001/ws');
   const { isListening: speechListening, transcript, interimTranscript, startListening, stopListening, resetTranscript, isSupported, error: speechError } = useSpeechRecognition();
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -183,12 +197,34 @@ function App() {
           setSystemStats(data.payload);
         } else if (data.type === 'listening_state') {
           setIsListening(data.payload.isListening);
+        } else if (data.type === 'learning_progress') {
+          // Handle learning progress updates
+          const payload = data.payload;
+          setLearningProgress({
+            active: payload.active,
+            taskId: payload.task_id,
+            title: payload.title || '',
+            percent: payload.percent || 0,
+            status: payload.status || '',
+            logs: payload.logs || []
+          });
+        } else if (data.type === 'shopping_progress') {
+          // Handle shopping progress updates
+          const payload = data.payload;
+          setShoppingProgress({
+            active: payload.status !== 'completed' && payload.status !== 'error',
+            query: payload.query || '',
+            status: payload.status || '',
+            platform: payload.platform || '',
+            resultsCount: payload.results_count || 0,
+            lastUpdate: payload.timestamp || new Date().toISOString(),
+          });
         }
       } catch (e) {
         console.error('Failed to parse WebSocket message:', e);
       }
     }
-  }, [lastMessage, setSystemStats, setIsListening]);
+  }, [lastMessage, setSystemStats, setIsListening, setLearningProgress, setShoppingProgress]);
 
   useEffect(() => {
     setIsConnected(isConnected);
@@ -220,8 +256,36 @@ function App() {
 
   return (
     <div className="h-screen w-screen bg-jarvis-bg flex overflow-hidden font-sans text-jarvis-text">
-      {/* Left Sidebar */}
-      <Sidebar />
+      <AnimatePresence mode="wait">
+        {isLoading ? (
+          <LoadingScreen key="loading" onLoadingComplete={() => setIsLoading(false)} />
+        ) : (
+          <motion.div
+            key="app"
+            className="flex w-full h-full"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+          >
+      {/* Left Sidebar - Auto Hide */}
+      <motion.div
+        className="relative z-40"
+        onMouseEnter={() => setIsHoveringSidebar(true)}
+        onMouseLeave={() => setIsHoveringSidebar(false)}
+        animate={{ 
+          width: sidebarCollapsed && !isHoveringSidebar ? '64px' : '240px',
+        }}
+        transition={{ 
+          type: 'spring', 
+          stiffness: 400, 
+          damping: 30,
+          mass: 0.8
+        }}
+      >
+        <div className="h-full">
+          <Sidebar collapsed={sidebarCollapsed && !isHoveringSidebar} />
+        </div>
+      </motion.div>
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
@@ -230,12 +294,31 @@ function App() {
 
         {/* Main Content */}
         <div className="flex-1 flex overflow-hidden">
-          {/* Main Panel */}
+          {/* Main Panel - Dynamic width based on expand mode */}
           <motion.div
-            className="flex-1 flex flex-col min-w-0"
+            className="flex flex-col min-w-0 h-full"
             initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.3 }}
+            animate={{ 
+              opacity: 1,
+              width: activeTab === 'assistant' 
+                ? chatExpandMode === 'normal' ? '95%' : 
+                  chatExpandMode === 'half' ? '75%' : 
+                  chatExpandMode === 'full' ? '100%' : '95%'
+                : '100%',
+              flex: activeTab === 'assistant' ? 0 : 1
+            }}
+            transition={{ 
+              duration: 0.3,
+              ease: 'easeInOut'
+            }}
+            style={{ 
+              width: activeTab === 'assistant' 
+                ? chatExpandMode === 'normal' ? '95%' : 
+                  chatExpandMode === 'half' ? '75%' : 
+                  chatExpandMode === 'full' ? '100%' : '95%'
+                : undefined,
+              flex: activeTab === 'assistant' ? '0 0 auto' : '1 1 0%'
+            }}
           >
             {/* Listening / Speaking Indicator */}
             <AnimatePresence>
@@ -311,13 +394,56 @@ function App() {
             </div>
           </motion.div>
 
-          {/* Right Panel - System Dashboard & Plugins - only show on assistant */}
-          {activeTab === 'assistant' && <RightPanel />}
+          {/* Right Panel - System Dashboard & Plugins - Auto Hide */}
+          <motion.div
+            className="relative z-40"
+            onMouseEnter={() => setIsHoveringRightPanel(true)}
+            onMouseLeave={() => setIsHoveringRightPanel(false)}
+            animate={{ 
+              width: rightPanelCollapsed && !isHoveringRightPanel ? '64px' : '288px',
+            }}
+            transition={{ 
+              type: 'spring', 
+              stiffness: 400, 
+              damping: 30,
+              mass: 0.8
+            }}
+          >
+            <div className="h-full">
+              <RightPanel collapsed={rightPanelCollapsed && !isHoveringRightPanel} />
+            </div>
+          </motion.div>
         </div>
 
-        {/* Bottom Quick Actions Bar */}
-        <BottomBar />
+        {/* Bottom Quick Actions Bar - Auto Hide */}
+        <motion.div
+          className="relative z-40"
+          onMouseEnter={() => setIsHoveringBottomBar(true)}
+          onMouseLeave={() => setIsHoveringBottomBar(false)}
+          animate={{ 
+            height: bottomBarCollapsed && !isHoveringBottomBar ? '40px' : '72px',
+          }}
+          transition={{ 
+            type: 'spring', 
+            stiffness: 400, 
+            damping: 30,
+            mass: 0.8
+          }}
+        >
+          <div className="h-full">
+            <BottomBar collapsed={bottomBarCollapsed && !isHoveringBottomBar} />
+          </div>
+        </motion.div>
       </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      
+      {/* Learning Progress Popup */}
+      <LearningProgress />
+      
+      {/* Shopping Progress Popup */}
+      <ShoppingProgress />
     </div>
   );
 }

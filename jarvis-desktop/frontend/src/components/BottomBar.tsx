@@ -1,15 +1,14 @@
-import { motion } from 'framer-motion';
 import {
+  Crown,
+  Monitor,
   Search,
   StickyNote,
   CheckSquare,
   Bell,
   Newspaper,
-  ChevronRight,
-  Monitor,
-  Crown,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
+import { motion } from 'framer-motion';
 
 const shortcuts = [
   { id: 'features', label: 'Features Hub', icon: Crown, description: '60+ powerful features', color: 'from-yellow-500 to-amber-500' },
@@ -21,7 +20,11 @@ const shortcuts = [
   { id: 'briefing', label: 'Daily Briefing', icon: Newspaper, description: 'Your day overview' },
 ];
 
-export default function BottomBar() {
+interface BottomBarProps {
+  collapsed?: boolean;
+}
+
+export default function BottomBar({ collapsed = false }: BottomBarProps) {
   const { addMessage, setActiveTab } = useStore();
 
   const handleShortcut = (id: string, label: string) => {
@@ -40,48 +43,61 @@ export default function BottomBar() {
   };
 
   return (
-    <motion.div
+    <motion.div 
+      className={`bg-jarvis-bg border-t border-white/5 flex items-center ${collapsed ? 'h-10 px-2 justify-center' : 'h-16 px-4 gap-3'}`}
       initial={{ y: 50, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
-      transition={{ duration: 0.3, delay: 0.2 }}
-      className="h-20 glass-panel border-t border-white/10 px-6 flex items-center gap-4 overflow-x-auto"
+      transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
     >
-      {shortcuts.map((shortcut, index) => {
-        const Icon = shortcut.icon;
-        return (
-          <motion.button
-            key={shortcut.id}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 + index * 0.05 }}
-            onClick={() => handleShortcut(shortcut.id, shortcut.label)}
-            className="flex items-center gap-3 px-4 py-3 rounded-xl glass-panel hover:bg-white/10 transition-all min-w-fit group"
-            whileHover={{ scale: 1.02, y: -2 }}
-            whileTap={{ scale: 0.98 }}
-          >
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-jarvis-accentPink/20 to-jarvis-accentRed/20 flex items-center justify-center group-hover:from-jarvis-accentPink/30 group-hover:to-jarvis-accentRed/30 transition-all">
-              <Icon size={20} className="text-jarvis-accentPink" />
-            </div>
-            <div className="text-left">
-              <p className="text-sm font-medium text-jarvis-text whitespace-nowrap">
-                {shortcut.label}
-              </p>
-              <p className="text-xs text-jarvis-textMuted whitespace-nowrap">
-                {shortcut.description}
-              </p>
-            </div>
-          </motion.button>
-        );
-      })}
-
-      {/* Scroll Indicator */}
-      <motion.button
-        className="w-10 h-10 rounded-xl glass-panel flex items-center justify-center ml-auto shrink-0"
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-      >
-        <ChevronRight size={20} className="text-jarvis-textMuted" />
-      </motion.button>
+      {!collapsed ? (
+        <>
+          {shortcuts.map((shortcut, index) => {
+            const Icon = shortcut.icon;
+            return (
+              <motion.button
+                key={shortcut.id}
+                onClick={() => handleShortcut(shortcut.id, shortcut.label)}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.05 }}
+                whileHover={{ scale: 1.05, y: -2 }}
+                whileTap={{ scale: 0.95 }}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-sm text-jarvis-textMuted hover:text-jarvis-text"
+              >
+                <motion.div
+                  whileHover={{ rotate: 10 }}
+                  transition={{ type: 'spring', stiffness: 400 }}
+                >
+                  <Icon size={16} className="text-jarvis-accentPink" />
+                </motion.div>
+                <span className="whitespace-nowrap">{shortcut.label}</span>
+              </motion.button>
+            );
+          })}
+        </>
+      ) : (
+        /* Collapsed view - icon row */
+        <div className="flex items-center gap-2">
+          {shortcuts.slice(0, 6).map((shortcut, index) => {
+            const Icon = shortcut.icon;
+            return (
+              <motion.button
+                key={shortcut.id}
+                onClick={() => handleShortcut(shortcut.id, shortcut.label)}
+                initial={{ opacity: 0, scale: 0 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: index * 0.05, type: 'spring', stiffness: 500, damping: 30 }}
+                whileHover={{ scale: 1.2, y: -2 }}
+                whileTap={{ scale: 0.9 }}
+                className="w-8 h-8 rounded bg-white/5 hover:bg-jarvis-accentPink/20 flex items-center justify-center transition-colors"
+                title={shortcut.label}
+              >
+                <Icon size={16} className="text-jarvis-textMuted hover:text-jarvis-accentPink" />
+              </motion.button>
+            );
+          })}
+        </div>
+      )}
     </motion.div>
   );
 }

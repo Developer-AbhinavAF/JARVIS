@@ -21,6 +21,14 @@ from jarvis.memory import memory
 from jarvis.stt import STTEngine
 from jarvis.tts import TTSEngine
 
+# New feature modules
+from jarvis.intent_classifier import intent_classifier, IntentType
+from jarvis.task_manager import task_manager, submit_background_task
+from jarvis.youtube_learner import init_youtube_learner, learn_from_youtube, youtube_learner
+from jarvis.web_browser import init_web_browser, visit_page, search_in_page
+from jarvis.shopping import init_shopping_assistant, search_product
+from jarvis.document_reader import document_reader
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,12 +36,11 @@ def _print_banner() -> None:
     """Print an ASCII banner on startup."""
 
     banner = r"""
-      ██╗ █████╗ ██████╗ ██╗   ██╗██╗███████╗
-      ██║██╔══██╗██╔══██╗██║   ██║██║██╔════╝
-      ██║███████║██████╔╝██║   ██║██║███████╗
- ██╗  ██║██╔══██║██╔══██╗╚██╗ ██╔╝██║╚════██║
- ╚█████╔╝██║  ██║██║  ██║ ╚████╔╝ ██║███████║
-  ╚════╝ ╚═╝  ╚═╝╚═╝  ╚═╝  ╚═══╝  ╚═╝╚══════╝
+     _   _   _   _   _   _   _   _
+    | |_| |_| |_| |_| |_| |_| |_| |
+    |   _J_A_R_V_I_S_            |
+    |  [Your AI Assistant]       |
+    |____________________________|
     """
     print(banner)
 
@@ -403,6 +410,254 @@ def _handle_built_in_command(query: str, tts: TTSEngine | None, llm: JarvisLLM, 
                 print(f"  {result}")
             return True
 
+    # ===================== NEW FEATURES =====================
+    
+    # 1. YOUTUBE LEARNING - Learn from video and save to memory
+    youtube_learn_patterns = [
+        "learn from this video",
+        "learn from youtube",
+        "analyze video",
+        "study video",
+        "learn from this",
+        "youtube.com/watch",
+        "youtu.be/",
+    ]
+    if any(pattern in q for pattern in youtube_learn_patterns):
+        # Extract URL
+        import re
+        url_match = re.search(r'(https?://(?:[-\w.])+(?:[:\d]+)?(?:/(?:[\w/_.])*(?:\?(?:[\w&=%.])*)?(?:#(?:[\w.])*)?)?)', q)
+        if url_match:
+            url = url_match.group(0)
+            if tts:
+                tts.speak("I'll learn from this video in the background. This may take a few minutes.")
+            else:
+                print(f"  Learning from: {url}")
+            
+            # Submit as background task
+            async def learn_task():
+                try:
+                    result = await learn_from_youtube(url, save_to_memory=True)
+                    if result.get("success"):
+                        # Format and notify
+                        notes = result.get("notes", {})
+                        summary = f"✅ Learned from: {notes.get('title', 'Unknown')}\n"
+                        summary += f"   Topics: {', '.join(notes.get('topics', [])[:5])}"
+                        return summary
+                    else:
+                        return f"❌ Failed to learn: {result.get('error', 'Unknown error')}"
+                except Exception as e:
+                    return f"❌ Error: {str(e)}"
+            
+            task_id, response = submit_background_task(
+                "youtube_learning",
+                f"Learn from YouTube video: {url}",
+                learn_task,
+                immediate_response="⏳ Learning from video in background. You can continue chatting!"
+            )
+            
+            if not tts:
+                print(f"  {response}")
+            return True
+        else:
+            response = "Please provide a YouTube video URL."
+            if tts:
+                tts.speak(response)
+            else:
+                print(f"  {response}")
+            return True
+    
+    # Check for video learning intent with "in background" 
+    if "learn" in q and ("in background" in q or "while" in q):
+        # Already handled above or will be handled as intent
+        pass
+    
+    # 2. WEB BROWSER - Visit page and extract info
+    web_patterns = [
+        "visit page", "visit website", "visit site", "browse to",
+        "go to", "open website", "check website",
+        "what's on", "what is on", "content of",
+    ]
+    if any(pattern in q for pattern in web_patterns):
+        import re
+        url_match = re.search(r'(https?://[^\s]+)', q)
+        if url_match:
+            url = url_match.group(0)
+            
+            async def visit_task():
+                try:
+                    content = await visit_page(url)
+                    if content:
+                        return f"🌐 **{content.title}**\n\n{content.text[:2000]}..."
+                    return "Failed to visit page"
+                except Exception as e:
+                    return f"Error: {str(e)}"
+            
+            # Run as background task if user mentions background or multitasking
+            if "background" in q or "while" in q:
+                task_id, response = submit_background_task(
+                    "web_visit",
+                    f"Visit website: {url}",
+                    visit_task,
+                    immediate_response=f"⏳ Visiting {url} in background..."
+                )
+            else:
+                # Run synchronously for quick response
+                import asyncio
+                try:
+                    content = asyncio.run(visit_page(url))
+                    if content:
+                        response = f"🌐 **{content.title}**\n\n{content.text[:1500]}..."
+                        if len(content.text) > 1500:
+                            response += "\n\n[Content truncated. Ask me to search within this page for specific info.]"
+                    else:
+                        response = "Failed to visit page"
+                except Exception as e:
+                    response = f"Error: {str(e)}"
+            
+            if tts:
+                tts.speak(response[:200] + "..." if len(response) > 200 else response)
+            else:
+                print(f"  {response}")
+            return True
+    
+    # 3. WEB SEARCH WITHIN PAGE
+    if "search" in q and ("page" in q or "site" in q or "website" in q):
+        import re
+        # Try to extract URL and query
+        url_match = re.search(r'(https?://[^\s]+)', q)
+        # Query is everything after "for" or "search"
+        query = q
+        for marker in ["search page for", "search site for", "search for", "find on page"]:
+            if marker in q:
+                query = q.split(marker)[-1].strip()
+                break
+        
+        if url_match:
+            url = url_match.group(0)
+            
+            async def search_task():
+                try:
+                    result = await search_in_page(url, query)
+                    if result.total_matches > 0:
+                        lines = [f"🔍 Found {result.total_matches} matches for '{query}':"]
+                        for i, match in enumerate(result.matches[:3], 1):
+                            lines.append(f"\n**Match {i}:**")
+                            lines.append(f"```{match['context'][:300]}```")
+                        return "\n".join(lines)
+                    return f"No matches found for '{query}'"
+                except Exception as e:
+                    return f"Error: {str(e)}"
+            
+            import asyncio
+            try:
+                result = asyncio.run(search_task())
+            except Exception as e:
+                result = f"Error: {str(e)}"
+            
+            if tts:
+                tts.speak(result[:200] + "..." if len(result) > 200 else result)
+            else:
+                print(f"  {result}")
+            return True
+    
+    # 4. SHOPPING ASSISTANT
+    shopping_patterns = [
+        "buy", "purchase", "find cheapest", "find lowest price",
+        "compare prices", "shopping for", "where can i buy",
+        "looking for", "want to buy",
+    ]
+    if any(pattern in q for pattern in shopping_patterns):
+        # Extract product name
+        product = q
+        for prefix in ["buy", "purchase", "find cheapest", "find lowest price", "compare prices for", 
+                       "shopping for", "where can i buy", "looking for", "want to buy"]:
+            if product.startswith(prefix):
+                product = product[len(prefix):].strip()
+                break
+        
+        # Remove extra words
+        for suffix in [" on amazon", " on flipkart", " online", " cheapest", " best price"]:
+            if product.endswith(suffix):
+                product = product[:-len(suffix)].strip()
+        
+        if product:
+            if tts:
+                tts.speak(f"Searching for {product} on Amazon, Flipkart, and other platforms...")
+            else:
+                print(f"  Searching for: {product}")
+            
+            async def shopping_task():
+                try:
+                    from jarvis.shopping import shopping_assistant
+                    result = await search_product(product)
+                    return shopping_assistant.format_results(result, min_rating=4.0, limit=5)
+                except Exception as e:
+                    return f"Error searching: {str(e)}"
+            
+            # Run as background task (shopping takes time)
+            task_id, response = submit_background_task(
+                "shopping",
+                f"Search for {product}",
+                shopping_task,
+                immediate_response=f"⏳ Searching for '{product}' on Flipkart, Amazon, Myntra, Meesho, Shopsy..."
+            )
+            
+            if not tts:
+                print(f"  {response}")
+            return True
+    
+    # 5. DOCUMENT READING WITH CLEAN OUTPUT
+    if q.startswith(("read file", "read document", "analyze file", "what's in this file")):
+        # This will be handled by file upload in GUI, but for text mode:
+        response = "Please use the file upload button in the GUI to share a file with me."
+        if tts:
+            tts.speak(response)
+        else:
+            print(f"  {response}")
+        return True
+    
+    # 6. CHECK TASK STATUS
+    if "task status" in q or "check task" in q or "what's the status" in q:
+        import re
+        task_match = re.search(r'task\s+(\w+)', q)
+        if task_match:
+            task_id = task_match.group(1)
+            task = task_manager.get_task(task_id)
+            if task:
+                status_msg = f"Task {task_id}: {task.status.value}"
+                if task.progress > 0:
+                    status_msg += f" ({task.progress:.0f}%)"
+                if task.result:
+                    status_msg += f"\nResult: {str(task.result)[:200]}"
+            else:
+                status_msg = f"Task {task_id} not found."
+            
+            if tts:
+                tts.speak(status_msg)
+            else:
+                print(f"  {status_msg}")
+            return True
+        else:
+            # Show all active tasks
+            active = task_manager.get_active_tasks()
+            if active:
+                msg = "Active tasks (" + str(len(active)) + "):"
+                lines = [msg]
+                for task in active:
+                    line = "  • " + task.task_id + ": " + task.description + " - " + task.status.value
+                    lines.append(line)
+                status_msg = "\n".join(lines)
+            else:
+                status_msg = "No active background tasks."
+            
+            if tts:
+                tts.speak(status_msg)
+            else:
+                print(f"  {status_msg}")
+            return True
+    
+    # ===================== END NEW FEATURES =====================
+    
     # Memory/Todo commands - built-in for better reliability
     # Add todo
     if q.startswith(("add todo ", "create todo ", "new todo ", "add task ")):
@@ -487,14 +742,14 @@ def _select_mode() -> str:
     print("  JARVIS MODE SELECTOR")
     print("="*50)
     print("  Press 'y' then Enter for FULL GUI MODE")
-    print("    → Modern AI interface with visuals, music, themes")
-    print("    → Voice control + Text input")
-    print("    → All features with beautiful UI")
+    print("    > Modern AI interface with visuals, music, themes")
+    print("    > Voice control + Text input")
+    print("    > All features with beautiful UI")
     print()
     print("  Press 'n' then Enter for SIMPLE CHAT MODE")
-    print("    → ChatGPT-style text conversation")
-    print("    → Clean terminal interface")
-    print("    → No voice, pure text")
+    print("    > ChatGPT-style text conversation")
+    print("    > Clean terminal interface")
+    print("    > No voice, pure text")
     print()
     print("  Waiting 10 seconds... (default: FULL GUI)")
     print("="*50)
@@ -749,6 +1004,30 @@ def main() -> None:
 
     # Initialize LLM
     llm = JarvisLLM()
+    
+    # Initialize new feature modules
+    try:
+        # YouTube learning (requires OpenAI client from LLM)
+        init_youtube_learner(openai_client=llm.client, memory=memory)
+        logger.info("YouTube learner initialized")
+    except Exception as e:
+        logger.warning(f"YouTube learner initialization failed: {e}")
+    
+    try:
+        # Web browser
+        init_web_browser(headless=True)
+        logger.info("Web browser initialized")
+    except Exception as e:
+        logger.warning(f"Web browser initialization failed: {e}")
+    
+    try:
+        # Shopping assistant
+        init_shopping_assistant()
+        logger.info("Shopping assistant initialized")
+    except Exception as e:
+        logger.warning(f"Shopping assistant initialization failed: {e}")
+    
+    logger.info("Task manager ready with {} workers".format(task_manager.max_workers))
 
     # Run appropriate mode
     if mode == 'voice':
