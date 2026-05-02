@@ -29,7 +29,6 @@ export interface SystemStats {
   cpu: {
     usage: number;
     cores: number;
-    frequency: number;
   };
   memory: {
     used: number;
@@ -53,9 +52,78 @@ export interface SystemStats {
   };
   processes: {
     count: number;
-    top: Array<{ name: string; cpu: number; memory: number }>;
   };
   uptime: number;
+}
+
+export type SystemStatsInput = Partial<{
+  cpu: Partial<SystemStats['cpu']>;
+  memory: Partial<SystemStats['memory']>;
+  battery: Partial<SystemStats['battery']>;
+  disk: Partial<SystemStats['disk']>;
+  network: Partial<SystemStats['network']>;
+  processes: Partial<SystemStats['processes']>;
+  uptime: number;
+}>;
+
+export const DEFAULT_SYSTEM_STATS: SystemStats = {
+  cpu: {
+    usage: 0,
+    cores: 4,
+  },
+  memory: {
+    used: 0,
+    total: 16 * 1024 ** 3,
+    percentage: 0,
+  },
+  battery: {
+    percentage: 100,
+    isCharging: true,
+  },
+  disk: {
+    used: 0,
+    total: 512 * 1024 ** 3,
+    percentage: 0,
+  },
+  network: {
+    downloadSpeed: 0,
+    uploadSpeed: 0,
+    ping: 0,
+  },
+  processes: {
+    count: 0,
+  },
+  uptime: 0,
+};
+
+export function normalizeSystemStats(stats?: SystemStatsInput | null): SystemStats {
+  return {
+    cpu: {
+      ...DEFAULT_SYSTEM_STATS.cpu,
+      ...(stats?.cpu ?? {}),
+    },
+    memory: {
+      ...DEFAULT_SYSTEM_STATS.memory,
+      ...(stats?.memory ?? {}),
+    },
+    battery: {
+      ...DEFAULT_SYSTEM_STATS.battery,
+      ...(stats?.battery ?? {}),
+    },
+    disk: {
+      ...DEFAULT_SYSTEM_STATS.disk,
+      ...(stats?.disk ?? {}),
+    },
+    network: {
+      ...DEFAULT_SYSTEM_STATS.network,
+      ...(stats?.network ?? {}),
+    },
+    processes: {
+      ...DEFAULT_SYSTEM_STATS.processes,
+      ...(stats?.processes ?? {}),
+    },
+    uptime: stats?.uptime ?? DEFAULT_SYSTEM_STATS.uptime,
+  };
 }
 
 export interface Plugin {

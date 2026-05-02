@@ -8,6 +8,7 @@ import {
   HelpCircle,
   Plus,
   Terminal,
+  UserRound,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -30,6 +31,69 @@ interface SidebarProps {
 
 export default function Sidebar({ collapsed = false }: SidebarProps) {
   const { activeTab, setActiveTab, isConnected } = useStore();
+
+  if (collapsed) {
+    return (
+      <motion.aside
+        initial={{ x: -40, opacity: 0 }}
+        animate={{ x: 0, opacity: 1 }}
+        className="h-full w-full flex flex-col items-center py-4 border-r border-white/5 bg-jarvis-bg"
+      >
+        <div className="flex h-16 items-center justify-center">
+          <motion.div
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-jarvis-accentPink to-jarvis-accentBlue"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <Sparkles size={22} className="text-white" />
+          </motion.div>
+        </div>
+
+        <nav className="mt-6 flex flex-1 flex-col items-center gap-2.5">
+          {navItems.map((item, index) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+
+            return (
+              <motion.button
+                key={item.id}
+                onClick={() => setActiveTab(item.id)}
+                title={item.label}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.06 + index * 0.04 }}
+                whileHover={{ y: -2, scale: 1.04 }}
+                whileTap={{ scale: 0.97 }}
+                className={`group relative flex h-10 w-10 items-center justify-center rounded-lg transition-all ${
+                  isActive
+                    ? 'bg-jarvis-accentPink/15 text-jarvis-accentPink'
+                    : 'text-jarvis-textMuted hover:text-jarvis-text hover:bg-white/5'
+                }`}
+              >
+                <Icon size={18} className="transition-transform group-hover:scale-110" />
+                {item.id === 'plugins' && (
+                  <span className="absolute -right-1 top-0.5 h-2 w-2 rounded-full bg-jarvis-accentPink shadow-[0_0_8px_rgba(255,110,199,0.8)]" />
+                )}
+              </motion.button>
+            );
+          })}
+        </nav>
+
+        <div className="mt-4 flex justify-center">
+          <div className="relative">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-slate-200 shadow-[0_12px_30px_rgba(0,0,0,0.28)]">
+              <UserRound size={17} />
+            </div>
+            <span
+              className={`absolute bottom-0.5 right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#04070e] ${
+                isConnected ? 'bg-emerald-400 shadow-[0_0_14px_rgba(74,222,128,0.65)]' : 'bg-red-500'
+              }`}
+            />
+          </div>
+        </div>
+      </motion.aside>
+    );
+  }
 
   return (
     <motion.aside

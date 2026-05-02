@@ -15,20 +15,20 @@ import DocsSection from '@/components/DocsSection';
 import LoadingScreen from '@/components/LoadingScreen';
 import LearningProgress from '@/components/LearningProgress';
 import ShoppingProgress from '@/components/ShoppingProgress';
+import AppErrorBoundary from '@/components/AppErrorBoundary';
 import { useStore } from '@/store/useStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { Mic, MicOff, Send } from 'lucide-react';
 
 function App() {
-  const { setIsListening, setSystemStats, setIsConnected, setLearningProgress, setShoppingProgress, activeTab, addMessage, setIsTyping, mode: currentMode, toggleMode, chatExpandMode } = useStore();
+  const { setIsListening, setSystemStats, setIsConnected, setLearningProgress, setShoppingProgress, activeTab, setActiveTab, addMessage, setIsTyping, mode: currentMode, toggleMode, chatExpandMode, setChatExpandMode } = useStore();
   
   // Loading state
   const [isLoading, setIsLoading] = useState(true);
   
   // Auto-hide states - start collapsed by default
   const sidebarCollapsed = true;
-  const rightPanelCollapsed = true;
   const bottomBarCollapsed = true;
   const [isHoveringSidebar, setIsHoveringSidebar] = useState(false);
   const [isHoveringRightPanel, setIsHoveringRightPanel] = useState(false);
@@ -230,6 +230,17 @@ function App() {
     setIsConnected(isConnected);
   }, [isConnected, setIsConnected]);
 
+  useEffect(() => {
+    setActiveTab('home');
+    setChatExpandMode('normal');
+  }, [setActiveTab, setChatExpandMode]);
+
+  useEffect(() => {
+    if (activeTab === 'assistant' && chatExpandMode !== 'normal') {
+      setIsHoveringRightPanel(false);
+    }
+  }, [activeTab, chatExpandMode]);
+
   // Render the active section
   const renderSection = () => {
     switch (activeTab) {
@@ -254,26 +265,78 @@ function App() {
     }
   };
 
+  const isAssistantView = activeTab === 'assistant';
+  const isHomeView = activeTab === 'home';
+  // All views now support expand/collapse like dashboard
+  const rightPanelMode = isAssistantView ? chatExpandMode : 'normal';
+  const rightPanelHidden = rightPanelMode === 'full';
+  const rightPanelHoverEnabled = rightPanelMode === 'normal';
+  const rightPanelCollapsedState = rightPanelMode !== 'normal' || !isHoveringRightPanel;
+  const sidebarHoverEnabled = true; // Always enable sidebar hover
+  const sidebarWidth = sidebarCollapsed && !isHoveringSidebar ? 64 : 240;
+  const rightPanelWidth = rightPanelMode === 'full'
+    ? 0
+    : rightPanelMode === 'half'
+      ? 64
+      : rightPanelCollapsedState
+        ? 64
+        : 288;
+
   return (
-    <div className="h-screen w-screen bg-jarvis-bg flex overflow-hidden font-sans text-jarvis-text">
+    <div className="h-screen w-screen flex overflow-hidden font-sans text-jarvis-text relative">
+      {/* Background Video - Optimized */}
+      <video
+        autoPlay
+        loop
+        muted
+        playsInline
+        preload="auto"
+        disablePictureInPicture
+        disableRemotePlayback
+        className="absolute inset-0 w-full h-full object-cover z-0 will-change-transform"
+        style={{ opacity: 0.4 }}
+      >
+        <source src="/src/background/bcg.webm" type="video/webm" />
+      </video>
+
+      {/* Lightweight CSS Particles - Reduced count */}
+      <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+        {[...Array(6)].map((_, i) => (
+          <div
+            key={i}
+            className="absolute w-1 h-1 bg-jarvis-accentPink/20 rounded-full animate-float"
+            style={{
+              left: `${15 + i * 15}%`,
+              bottom: '-10px',
+              animationDelay: `${i * 2}s`,
+              animationDuration: `${12 + i * 2}s`,
+            }}
+          />
+        ))}
+      </div>
+
+      {/* Static Gradient Overlay - Better Performance */}
+      <div className="absolute inset-0 z-0 bg-gradient-to-br from-black/50 via-black/30 to-black/50 pointer-events-none" />
+
       <AnimatePresence mode="wait">
         {isLoading ? (
           <LoadingScreen key="loading" onLoadingComplete={() => setIsLoading(false)} />
         ) : (
-          <motion.div
-            key="app"
-            className="flex w-full h-full"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-          >
+          <AppErrorBoundary>
+            <motion.div
+              key="app"
+              className="flex w-full h-full relative z-10"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+            >
       {/* Left Sidebar - Auto Hide */}
       <motion.div
         className="relative z-40"
-        onMouseEnter={() => setIsHoveringSidebar(true)}
-        onMouseLeave={() => setIsHoveringSidebar(false)}
+        onMouseEnter={sidebarHoverEnabled ? () => setIsHoveringSidebar(true) : undefined}
+        onMouseLeave={sidebarHoverEnabled ? () => setIsHoveringSidebar(false) : undefined}
         animate={{ 
-          width: sidebarCollapsed && !isHoveringSidebar ? '64px' : '240px',
+          width: sidebarWidth,
         }}
         transition={{ 
           type: 'spring', 
@@ -294,31 +357,12 @@ function App() {
 
         {/* Main Content */}
         <div className="flex-1 flex overflow-hidden">
-          {/* Main Panel - Dynamic width based on expand mode */}
+          {/* Main Panel */}
           <motion.div
-            className="flex flex-col min-w-0 h-full"
+            className="flex flex-1 flex-col min-w-0 h-full"
             initial={{ opacity: 0 }}
-            animate={{ 
-              opacity: 1,
-              width: activeTab === 'assistant' 
-                ? chatExpandMode === 'normal' ? '95%' : 
-                  chatExpandMode === 'half' ? '75%' : 
-                  chatExpandMode === 'full' ? '100%' : '95%'
-                : '100%',
-              flex: activeTab === 'assistant' ? 0 : 1
-            }}
-            transition={{ 
-              duration: 0.3,
-              ease: 'easeInOut'
-            }}
-            style={{ 
-              width: activeTab === 'assistant' 
-                ? chatExpandMode === 'normal' ? '95%' : 
-                  chatExpandMode === 'half' ? '75%' : 
-                  chatExpandMode === 'full' ? '100%' : '95%'
-                : undefined,
-              flex: activeTab === 'assistant' ? '0 0 auto' : '1 1 0%'
-            }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.3, ease: 'easeInOut' }}
           >
             {/* Listening / Speaking Indicator */}
             <AnimatePresence>
@@ -390,17 +434,51 @@ function App() {
 
             {/* Section Content */}
             <div className="flex-1 overflow-hidden">
-              {renderSection()}
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={activeTab}
+                  className="h-full"
+                  initial={{ opacity: 0, y: 18, filter: 'blur(6px)' }}
+                  animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                  exit={{ opacity: 0, y: -12, filter: 'blur(4px)' }}
+                  transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+                >
+                  {renderSection()}
+                </motion.div>
+              </AnimatePresence>
             </div>
           </motion.div>
 
           {/* Right Panel - System Dashboard & Plugins - Auto Hide */}
           <motion.div
-            className="relative z-40"
-            onMouseEnter={() => setIsHoveringRightPanel(true)}
-            onMouseLeave={() => setIsHoveringRightPanel(false)}
+            className="relative z-40 overflow-hidden"
+            onMouseEnter={rightPanelHoverEnabled ? () => setIsHoveringRightPanel(true) : undefined}
+            onMouseLeave={rightPanelHoverEnabled ? () => setIsHoveringRightPanel(false) : undefined}
+            animate={{
+              width: rightPanelWidth,
+              opacity: rightPanelHidden ? 0 : 1,
+            }}
+            transition={{
+              type: 'spring', 
+              stiffness: 400, 
+              damping: 30,
+              mass: 0.8
+            }}
+            style={{ pointerEvents: rightPanelHidden ? 'none' : 'auto' }}
+            aria-hidden={rightPanelHidden}
+          >
+            <div className="h-full">
+              <RightPanel collapsed={rightPanelCollapsedState} />
+            </div>
+          </motion.div>
+        </div>
+
+        <motion.div
+          className="relative z-40"
+          onMouseEnter={() => setIsHoveringBottomBar(true)}
+          onMouseLeave={() => setIsHoveringBottomBar(false)}
             animate={{ 
-              width: rightPanelCollapsed && !isHoveringRightPanel ? '64px' : '288px',
+              height: bottomBarCollapsed && !isHoveringBottomBar ? '40px' : '72px',
             }}
             transition={{ 
               type: 'spring', 
@@ -410,32 +488,12 @@ function App() {
             }}
           >
             <div className="h-full">
-              <RightPanel collapsed={rightPanelCollapsed && !isHoveringRightPanel} />
+              <BottomBar collapsed={bottomBarCollapsed && !isHoveringBottomBar} />
             </div>
           </motion.div>
-        </div>
-
-        {/* Bottom Quick Actions Bar - Auto Hide */}
-        <motion.div
-          className="relative z-40"
-          onMouseEnter={() => setIsHoveringBottomBar(true)}
-          onMouseLeave={() => setIsHoveringBottomBar(false)}
-          animate={{ 
-            height: bottomBarCollapsed && !isHoveringBottomBar ? '40px' : '72px',
-          }}
-          transition={{ 
-            type: 'spring', 
-            stiffness: 400, 
-            damping: 30,
-            mass: 0.8
-          }}
-        >
-          <div className="h-full">
-            <BottomBar collapsed={bottomBarCollapsed && !isHoveringBottomBar} />
-          </div>
-        </motion.div>
       </div>
-          </motion.div>
+      </motion.div>
+          </AppErrorBoundary>
         )}
       </AnimatePresence>
       

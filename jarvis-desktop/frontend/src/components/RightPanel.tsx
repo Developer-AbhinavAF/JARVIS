@@ -13,11 +13,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  LineChart,
-  Line,
-  ResponsiveContainer,
-} from 'recharts';
+import { LineChart, Line, ResponsiveContainer } from 'recharts';
 
 interface RightPanelProps {
   collapsed?: boolean;
@@ -26,7 +22,6 @@ interface RightPanelProps {
 export default function RightPanel({ collapsed = false }: RightPanelProps) {
   const { systemStats, plugins } = useStore();
 
-  // Sample data for charts (in real app, this would come from system stats history)
   const chartData = [
     { value: 30 },
     { value: 45 },
@@ -42,7 +37,7 @@ export default function RightPanel({ collapsed = false }: RightPanelProps) {
     const k = 1024;
     const sizes = ['B/s', 'KB/s', 'MB/s'];
     const i = Math.floor(Math.log(bytesPerSec) / Math.log(k));
-    return parseFloat((bytesPerSec / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    return `${parseFloat((bytesPerSec / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
   };
 
   return (
@@ -50,11 +45,10 @@ export default function RightPanel({ collapsed = false }: RightPanelProps) {
       initial={{ x: 100, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
       transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
-      className={`bg-jarvis-bg border-l border-white/5 flex flex-col overflow-hidden ${collapsed ? 'w-16' : 'w-72'}`}
+      className={`flex h-full flex-col overflow-hidden border-l border-white/5 bg-jarvis-bg ${collapsed ? 'w-16' : 'w-72'}`}
     >
-      {/* Header */}
-      <motion.div 
-        className={`border-b border-white/5 flex items-center ${collapsed ? 'h-16 justify-center px-2' : 'h-16 px-4'}`}
+      <motion.div
+        className={`flex items-center border-b border-white/5 ${collapsed ? 'h-16 justify-center px-2' : 'h-16 px-4'}`}
         layout
       >
         <motion.div
@@ -65,8 +59,8 @@ export default function RightPanel({ collapsed = false }: RightPanelProps) {
         </motion.div>
         <AnimatePresence>
           {!collapsed && (
-            <motion.span 
-              className="ml-2 font-semibold text-white text-sm"
+            <motion.span
+              className="ml-2 text-sm font-semibold text-white"
               initial={{ opacity: 0, x: 10 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 10 }}
@@ -78,11 +72,10 @@ export default function RightPanel({ collapsed = false }: RightPanelProps) {
         </AnimatePresence>
       </motion.div>
 
-      {/* Content */}
       <div className="flex-1 overflow-y-auto">
         {!collapsed ? (
-          <motion.div 
-            className="p-4 space-y-3"
+          <motion.div
+            className="space-y-3 p-4"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.1 }}
@@ -91,7 +84,7 @@ export default function RightPanel({ collapsed = false }: RightPanelProps) {
               <StatCard
                 icon={Cpu}
                 label="CPU"
-                value={`${systemStats?.cpu.usage ?? 23}%`}
+                value={`${systemStats.cpu.usage}%`}
                 chartData={chartData}
                 color="#ff6ec7"
                 delay={0}
@@ -99,7 +92,7 @@ export default function RightPanel({ collapsed = false }: RightPanelProps) {
               <StatCard
                 icon={HardDrive}
                 label="RAM"
-                value={`${systemStats?.memory.percentage ?? 62}%`}
+                value={`${systemStats.memory.percentage}%`}
                 chartData={chartData.map((d) => ({ value: d.value * 0.8 }))}
                 color="#ff3b3b"
                 delay={0.1}
@@ -107,8 +100,8 @@ export default function RightPanel({ collapsed = false }: RightPanelProps) {
               <StatCard
                 icon={Battery}
                 label="Battery"
-                value={`${systemStats?.battery.percentage ?? 78}%`}
-                subValue={systemStats?.battery.isCharging ? 'Charging' : 'Discharging'}
+                value={`${systemStats.battery.percentage}%`}
+                subValue={systemStats.battery.isCharging ? 'Charging' : 'Discharging'}
                 chartData={chartData.map((d) => ({ value: d.value * 0.6 }))}
                 color="#22c55e"
                 delay={0.2}
@@ -116,64 +109,60 @@ export default function RightPanel({ collapsed = false }: RightPanelProps) {
               <StatCard
                 icon={HardDrive}
                 label="Disk (C:)"
-                value={`${systemStats?.disk.percentage ?? 45}%`}
+                value={`${systemStats.disk.percentage}%`}
                 chartData={chartData.map((d) => ({ value: d.value * 0.5 }))}
                 color="#f59e0b"
                 delay={0.3}
               />
             </div>
 
-            {/* Network & Processes */}
-            <motion.div 
+            <motion.div
               className="grid grid-cols-2 gap-3"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.4 }}
             >
-              <div className="bg-white/5 rounded-lg p-3">
-                <div className="flex items-center gap-2 mb-2">
+              <div className="rounded-lg bg-white/5 p-3">
+                <div className="mb-2 flex items-center gap-2">
                   <Wifi size={14} className="text-jarvis-accentPink" />
                   <span className="text-xs text-jarvis-textMuted">Network</span>
                 </div>
                 <div className="space-y-1">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-jarvis-textMuted">↓</span>
-                    <span className="text-jarvis-text font-medium">
-                      {formatSpeed(systemStats?.network.downloadSpeed ?? 56200000)}
+                    <span className="text-jarvis-textMuted">DL</span>
+                    <span className="font-medium text-jarvis-text">
+                      {formatSpeed(systemStats.network.downloadSpeed)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-jarvis-textMuted">↑</span>
-                    <span className="text-jarvis-text font-medium">
-                      {formatSpeed(systemStats?.network.uploadSpeed ?? 18700000)}
+                    <span className="text-jarvis-textMuted">UL</span>
+                    <span className="font-medium text-jarvis-text">
+                      {formatSpeed(systemStats.network.uploadSpeed)}
                     </span>
                   </div>
                 </div>
               </div>
 
-              <div className="bg-white/5 rounded-lg p-3">
-                <div className="flex items-center gap-2 mb-2">
+              <div className="rounded-lg bg-white/5 p-3">
+                <div className="mb-2 flex items-center gap-2">
                   <Activity size={14} className="text-jarvis-accentPink" />
                   <span className="text-xs text-jarvis-textMuted">Processes</span>
                 </div>
-                <div className="text-xl font-bold text-jarvis-text">
-                  {systemStats?.processes.count ?? 142}
-                </div>
+                <div className="text-xl font-bold text-jarvis-text">{systemStats.processes.count}</div>
                 <div className="text-[10px] text-jarvis-textMuted">Running</div>
               </div>
             </motion.div>
 
-            {/* Plugins Section */}
-            <motion.div 
+            <motion.div
               className="pt-2"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.5 }}
             >
-              <div className="flex items-center justify-between mb-3">
+              <div className="mb-3 flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-jarvis-text">Plugins</h3>
-                <motion.button 
-                  className="text-xs text-jarvis-accentPink hover:text-jarvis-accentPink/80 transition-colors"
+                <motion.button
+                  className="text-xs text-jarvis-accentPink transition-colors hover:text-jarvis-accentPink/80"
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                 >
@@ -188,26 +177,22 @@ export default function RightPanel({ collapsed = false }: RightPanelProps) {
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.5 + index * 0.1 }}
                     whileHover={{ scale: 1.02, x: -2 }}
-                    className="bg-white/5 rounded-lg p-3 cursor-pointer hover:bg-white/10 transition-colors"
+                    className="cursor-pointer rounded-lg bg-white/5 p-3 transition-colors hover:bg-white/10"
                   >
                     <div className="flex items-start gap-3">
                       <div
-                        className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                          plugin.status === 'ready'
-                            ? 'bg-jarvis-accentPink/20'
-                            : 'bg-white/5'
+                        className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg ${
+                          plugin.status === 'ready' ? 'bg-jarvis-accentPink/20' : 'bg-white/5'
                         }`}
                       >
                         <PluginIcon name={plugin.icon} />
                       </div>
-                      <div className="flex-1 min-w-0">
+                      <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between">
-                          <h4 className="text-sm font-medium text-jarvis-text truncate">
-                            {plugin.name}
-                          </h4>
+                          <h4 className="truncate text-sm font-medium text-jarvis-text">{plugin.name}</h4>
                           <StatusBadge status={plugin.status} />
                         </div>
-                        <p className="text-xs text-jarvis-textMuted mt-0.5 line-clamp-1">
+                        <p className="mt-0.5 line-clamp-1 text-xs text-jarvis-textMuted">
                           {plugin.description}
                         </p>
                       </div>
@@ -218,18 +203,17 @@ export default function RightPanel({ collapsed = false }: RightPanelProps) {
             </motion.div>
           </motion.div>
         ) : (
-          /* Collapsed view - minimal icons with animations */
-          <motion.div 
-            className="flex flex-col items-center py-4 space-y-3"
+          <motion.div
+            className="flex flex-col items-center space-y-3 py-4"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.2 }}
           >
             {[
-              { icon: Cpu, color: 'text-jarvis-accentPink', bg: 'bg-jarvis-accentPink/15', title: `CPU ${systemStats?.cpu.usage ?? 23}%` },
-              { icon: HardDrive, color: 'text-red-400', bg: 'bg-red-500/15', title: `RAM ${systemStats?.memory.percentage ?? 62}%` },
-              { icon: Battery, color: 'text-green-400', bg: 'bg-green-500/15', title: `Battery ${systemStats?.battery.percentage ?? 78}%` },
-              { icon: HardDrive, color: 'text-yellow-400', bg: 'bg-yellow-500/15', title: `Disk ${systemStats?.disk.percentage ?? 45}%` },
+              { icon: Cpu, color: 'text-jarvis-accentPink', bg: 'bg-jarvis-accentPink/15', title: `CPU ${systemStats.cpu.usage}%` },
+              { icon: HardDrive, color: 'text-red-400', bg: 'bg-red-500/15', title: `RAM ${systemStats.memory.percentage}%` },
+              { icon: Battery, color: 'text-green-400', bg: 'bg-green-500/15', title: `Battery ${systemStats.battery.percentage}%` },
+              { icon: HardDrive, color: 'text-yellow-400', bg: 'bg-yellow-500/15', title: `Disk ${systemStats.disk.percentage}%` },
               { icon: Plus, color: 'text-jarvis-accentPink', bg: 'bg-jarvis-accentPink/15', title: 'Plugins' },
             ].map((item, index) => (
               <motion.div
@@ -238,7 +222,7 @@ export default function RightPanel({ collapsed = false }: RightPanelProps) {
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: index * 0.1, type: 'spring', stiffness: 500, damping: 30 }}
                 whileHover={{ scale: 1.15, rotate: 5 }}
-                className={`w-10 h-10 rounded-lg ${item.bg} flex items-center justify-center cursor-pointer`}
+                className={`flex h-10 w-10 cursor-pointer items-center justify-center rounded-lg ${item.bg}`}
                 title={item.title}
               >
                 <item.icon size={20} className={item.color} />
@@ -263,14 +247,14 @@ interface StatCardProps {
 
 function StatCard({ icon: Icon, label, value, subValue, chartData, color, delay = 0 }: StatCardProps) {
   return (
-    <motion.div 
-      className="bg-white/5 rounded-lg p-3 hover:bg-white/10 transition-colors"
+    <motion.div
+      className="rounded-lg bg-white/5 p-3 transition-colors hover:bg-white/10"
       initial={{ opacity: 0, y: 20, scale: 0.9 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ delay, duration: 0.3, type: 'spring', stiffness: 200 }}
       whileHover={{ scale: 1.03, y: -2 }}
     >
-      <div className="flex items-center gap-2 mb-2">
+      <div className="mb-2 flex items-center gap-2">
         <motion.div
           animate={{ rotate: [0, 10, -10, 0] }}
           transition={{ delay: delay + 0.5, duration: 0.5 }}
@@ -279,7 +263,7 @@ function StatCard({ icon: Icon, label, value, subValue, chartData, color, delay 
         </motion.div>
         <span className="text-xs text-jarvis-textMuted">{label}</span>
       </div>
-      <motion.div 
+      <motion.div
         className="text-xl font-bold text-jarvis-text"
         initial={{ opacity: 0, x: -10 }}
         animate={{ opacity: 1, x: 0 }}
@@ -330,12 +314,8 @@ function StatusBadge({ status, small = false }: { status: string; small?: boolea
   const { color, label } = config[status as keyof typeof config] || config.not_loaded;
 
   if (small) {
-    return <span className={`w-2 h-2 rounded-full ${color}`} title={label} />;
+    return <span className={`h-2 w-2 rounded-full ${color}`} title={label} />;
   }
 
-  return (
-    <span className={`px-1.5 py-0.5 rounded text-[10px] bg-white/10 text-jarvis-textMuted`}>
-      {label}
-    </span>
-  );
+  return <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-jarvis-textMuted">{label}</span>;
 }

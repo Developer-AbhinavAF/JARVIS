@@ -1,4 +1,4 @@
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useState, useEffect } from 'react';
 
 interface LoadingScreenProps {
@@ -20,12 +20,16 @@ export default function LoadingScreen({ onLoadingComplete }: LoadingScreenProps)
   ];
 
   useEffect(() => {
+    let completionTimeout: number | null = null;
+
     // Slower, more cinematic loading - ~5 seconds total
     const interval = setInterval(() => {
       setProgress((prev) => {
         if (prev >= 100) {
           clearInterval(interval);
-          setTimeout(onLoadingComplete, 800); // Longer exit delay
+          if (completionTimeout === null) {
+            completionTimeout = window.setTimeout(onLoadingComplete, 800);
+          }
           return 100;
         }
         // Variable speed - slower at start and end, faster in middle
@@ -34,7 +38,12 @@ export default function LoadingScreen({ onLoadingComplete }: LoadingScreenProps)
       });
     }, 80); // Slower interval
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (completionTimeout !== null) {
+        window.clearTimeout(completionTimeout);
+      }
+    };
   }, [onLoadingComplete]);
 
   useEffect(() => {

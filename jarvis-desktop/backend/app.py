@@ -950,12 +950,21 @@ class JarvisCore:
             
         except Exception as e:
             logger.error(f"Failed to initialize: {e}")
-            # Continue without full initialization
+            # Mark as initialized anyway so we don't keep retrying
+            # but components that failed will be None
             self.initialized = True
             
     async def chat(self, message: str, session_id: str = "default") -> Dict[str, Any]:
         if not self.initialized:
             await self.initialize()
+        
+        # If LLM is not available, return helpful error immediately
+        if not self.llm or not self.llm.client:
+            return {
+                "response": "⚠️ **AI Not Available**\n\nThe language model failed to initialize. Please check:\n• GROQ_API_KEY in .env file is valid\n• Internet connection is active\n• Restart the backend after fixing API keys",
+                "actions": [],
+                "suggestions": ["check system status", "restart backend"]
+            }
             
         q = message.strip().lower()
         
@@ -1520,12 +1529,12 @@ class JarvisCore:
                 return {"response": response_text, "actions": []}
                     
             else:
-                # LLM not available - use fallback
-                logger.error("LLM not initialized")
+                # LLM client is None - API keys likely invalid
+                logger.error("LLM client is None - API keys may be invalid")
                 return {
-                    "response": "I'm having trouble connecting to my AI brain. Let me try some basic responses...\n\nWhat would you like to know? I can help with system commands, calculations, or general questions once I'm back online.",
+                    "response": "⚠️ **AI System Error**\n\nCould not connect to language models.\n\nPlease check:\n• API keys are configured and valid in .env file\n• Internet connection is active\n• Backend logs for more details",
                     "actions": [],
-                    "suggestions": ["system status", "what time is it", "calculate 15 * 23", "tell me a joke"]
+                    "suggestions": ["check system status", "show logs"]
                 }
                 
         except Exception as e:

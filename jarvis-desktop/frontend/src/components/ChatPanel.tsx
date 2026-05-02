@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Mic, Copy, Volume2, Trash2, ExternalLink, Terminal, AlertCircle, Paperclip, Image, X, FileText, Maximize2, Minimize2 } from 'lucide-react';
+import { Send, Mic, Copy, Volume2, Trash2, ExternalLink, Terminal, AlertCircle, Paperclip, X, FileText, Maximize2, Minimize2 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { useChat } from '@/hooks/useApi';
 import type { Message, MessageAction, MessageActions } from '@/types';
@@ -28,6 +28,7 @@ export default function ChatPanel() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const typingIntervalRef = useRef<number | null>(null);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -40,6 +41,15 @@ export default function ChatPanel() {
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  const clearTypingInterval = useCallback(() => {
+    if (typingIntervalRef.current !== null) {
+      window.clearInterval(typingIntervalRef.current);
+      typingIntervalRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => clearTypingInterval, [clearTypingInterval]);
 
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -119,13 +129,15 @@ export default function ChatPanel() {
     }
   }, [addMessage, setIsTyping]);
 
-  const handleSend = useCallback(async () => {
-    if ((!input.trim() && !uploadedFile) || loading) return;
+  const handleSend = useCallback(async (messageOverride?: string) => {
+    const nextMessage = messageOverride ?? input;
+    if ((!nextMessage.trim() && !uploadedFile) || loading) return;
 
-    const userMessage = input.trim();
+    const userMessage = nextMessage.trim();
     setInput('');
     setError(null);
     setSuggestions([]);
+    clearTypingInterval();
 
     // Handle /clean command
     if (userMessage.toLowerCase() === '/clean' || userMessage.toLowerCase() === '/clear') {
@@ -170,7 +182,22 @@ export default function ChatPanel() {
       
       // Execute any actions returned by JARVIS
       if (response.actions && response.actions.length > 0) {
-        executeActions(response.actions);
+        response.actions.forEach((action) => {
+          switch (action.type) {
+            case 'open_url':
+              if (action.url) {
+                window.open(action.url, '_blank');
+              }
+              break;
+            case 'screenshot':
+              console.log('Screenshot saved:', action.path);
+              break;
+            case 'add_todo':
+            case 'add_note':
+              console.log('Memory saved:', action);
+              break;
+          }
+        });
       }
       
       // Update suggestions
@@ -189,7 +216,7 @@ export default function ChatPanel() {
       // Typing effect - type character by character
       const fullResponse = response.response;
       let currentIndex = 0;
-      const typeInterval = setInterval(() => {
+      typingIntervalRef.current = window.setInterval(() => {
         if (currentIndex <= fullResponse.length) {
           // Update message content progressively
           const typedContent = fullResponse.slice(0, currentIndex);
@@ -212,7 +239,7 @@ export default function ChatPanel() {
             scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
           }
         } else {
-          clearInterval(typeInterval);
+          clearTypingInterval();
         }
       }, 15); // 15ms per batch for smooth typing
       
@@ -226,31 +253,7 @@ export default function ChatPanel() {
     } finally {
       setIsTyping(false);
     }
-  }, [input, loading, addMessage, setIsTyping, sendMessage]);
-
-  // Execute actions returned by JARVIS
-  const executeActions = useCallback((actions: ChatResponse['actions']) => {
-    if (!actions) return;
-    
-    actions.forEach(action => {
-      switch (action.type) {
-        case 'open_url':
-          if (action.url) {
-            window.open(action.url, '_blank');
-          }
-          break;
-        case 'screenshot':
-          // Screenshot was already taken on backend
-          console.log('Screenshot saved:', action.path);
-          break;
-        case 'add_todo':
-        case 'add_note':
-          // Memory items were already saved on backend
-          console.log('Memory saved:', action);
-          break;
-      }
-    });
-  }, []);
+  }, [input, uploadedFile, loading, setInput, clearTypingInterval, clearMessages, addMessage, setIsTyping, sendMessage]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -295,6 +298,8 @@ export default function ChatPanel() {
                 onCopy={() => copyToClipboard(message.content)}
                 onSpeak={() => speakText(message.content)}
                 onDelete={() => deleteMessage(message.id)}
+                chatExpandMode={chatExpandMode}
+                onCycleExpand={cycleExpandMode}
               />
             );
           })}
@@ -417,8 +422,7 @@ export default function ChatPanel() {
                   };
                   input.click();
                 } else {
-                  setInput(action.command);
-                  handleSend();
+                  void handleSend(action.command);
                 }
               }}
             >
@@ -551,7 +555,9 @@ export default function ChatPanel() {
 
           {/* Send Button */}
           <motion.button
-            onClick={handleSend}
+            onClick={() => {
+              void handleSend();
+            }}
             disabled={(!input.trim() && !uploadedFile) || loading}
             className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
               (input.trim() || uploadedFile) && !loading
@@ -585,6 +591,8 @@ interface MessageBubbleProps {
   onCopy: () => void;
   onSpeak: () => void;
   onDelete: () => void;
+  chatExpandMode: 'normal' | 'half' | 'full';
+  onCycleExpand: () => void;
 }
 
 function MessageBubble({
@@ -595,6 +603,8 @@ function MessageBubble({
   onCopy,
   onSpeak,
   onDelete,
+  chatExpandMode,
+  onCycleExpand,
 }: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const [showActions, setShowActions] = useState(false);
@@ -706,7 +716,7 @@ function MessageBubble({
               </button>
               {!isUser && isLastAI && (
                 <button
-                  onClick={cycleExpandMode}
+                  onClick={onCycleExpand}
                   className="p-1.5 rounded-lg bg-black/50 text-jarvis-textMuted hover:text-jarvis-accentPink transition-colors"
                   title={chatExpandMode === 'normal' ? 'Expand canvas' : chatExpandMode === 'half' ? 'Full screen' : 'Reset canvas'}
                 >

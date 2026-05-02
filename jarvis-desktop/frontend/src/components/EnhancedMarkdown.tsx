@@ -1,6 +1,5 @@
-import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Copy, Check, Code, FileText, Maximize2, Minimize2, ExternalLink } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 import { CodeCanvas } from './CodeCanvas';
 import { FileCanvas } from './FileCanvas';
 
@@ -186,8 +185,8 @@ function parseInlineStyles(text: string): React.ReactNode {
 
   const patterns = [
     { regex: /\[([^\]]+)\]\(([^)]+)\)/, type: 'link', class: '' }, // [text](url) - must be first
-    { regex: /\*\*(.+?)\*\* /, type: 'bold', class: 'font-bold text-lg' },
-    { regex: /\*(.+?)\* /, type: 'italic', class: 'italic' },
+    { regex: /\*\*(.+?)\*\*/, type: 'bold', class: 'font-bold text-lg' },
+    { regex: /\*(.+?)\*/, type: 'italic', class: 'italic' },
     { regex: /`(.+?)`/, type: 'code', class: 'font-mono bg-black/30 px-1.5 py-0.5 rounded text-sm text-jarvis-accentPink' },
     { regex: /~~(.+?)~~/, type: 'strike', class: 'line-through opacity-50' },
     { regex: /==(.+?)==/, type: 'highlight', class: 'bg-yellow-500/20 px-1 rounded' },

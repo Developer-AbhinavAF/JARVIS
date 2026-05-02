@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '@/store/useStore';
-import { Search, ShoppingBag, CheckCircle, AlertCircle, ExternalLink } from 'lucide-react';
+import { Search, ShoppingBag, CheckCircle, AlertCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 export default function ShoppingProgress() {
@@ -97,7 +97,6 @@ export default function ShoppingProgress() {
                 const isCompleted = currentPlatformIndex > index || 
                   (shoppingProgress.status === 'completed') ||
                   (shoppingProgress.status === 'found' && platforms.indexOf(shoppingProgress.platform) >= index);
-                const isPending = index > currentPlatformIndex && shoppingProgress.status !== 'completed';
 
                 return (
                   <motion.div

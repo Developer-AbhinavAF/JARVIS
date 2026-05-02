@@ -1,6 +1,17 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Mode, Message, SystemStats, Plugin, Todo, Note, Reminder, ChatSession } from '@/types';
+import { normalizeSystemStats } from '@/types';
+import type {
+  ChatSession,
+  Message,
+  Mode,
+  Note,
+  Plugin,
+  Reminder,
+  SystemStats,
+  SystemStatsInput,
+  Todo,
+} from '@/types';
 
 interface StoreState {
   // Mode
@@ -20,9 +31,9 @@ interface StoreState {
   setIsTyping: (typing: boolean) => void;
 
   // System
-  systemStats: SystemStats | null;
+  systemStats: SystemStats;
   isConnected: boolean;
-  setSystemStats: (stats: SystemStats) => void;
+  setSystemStats: (stats?: SystemStatsInput | null) => void;
   setIsConnected: (connected: boolean) => void;
 
   // Plugins
@@ -142,9 +153,9 @@ export const useStore = create<StoreState>()(
       setIsTyping: (typing) => set({ isTyping: typing }),
 
       // System
-      systemStats: null,
+      systemStats: normalizeSystemStats(),
       isConnected: false,
-      setSystemStats: (stats) => set({ systemStats: stats }),
+      setSystemStats: (stats) => set({ systemStats: normalizeSystemStats(stats) }),
       setIsConnected: (connected) => set({ isConnected: connected }),
 
       // Plugins
@@ -354,7 +365,6 @@ export const useStore = create<StoreState>()(
         notes: state.notes,
         reminders: state.reminders,
         sessions: state.sessions,
-        activeTab: state.activeTab,
         chatExpandMode: state.chatExpandMode,
       }),
     }

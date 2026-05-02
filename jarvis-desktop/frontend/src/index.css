@@ -136,6 +136,29 @@ body {
   50% { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
 }
 
+/* Lightweight floating particles animation */
+.animate-float {
+  animation: float-up linear infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes float-up {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.3;
+  }
+  90% {
+    opacity: 0.2;
+  }
+  100% {
+    transform: translateY(-110vh) scale(0.5);
+    opacity: 0;
+  }
+}
+
 /* Card hover lift */
 .card-lift {
   transition: transform 0.2s ease, box-shadow 0.2s ease;
