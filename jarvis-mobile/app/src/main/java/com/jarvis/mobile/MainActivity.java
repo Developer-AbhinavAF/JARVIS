@@ -116,6 +116,7 @@ public final class MainActivity extends Activity {
     private boolean isListening = false;
     private boolean continueListening = false;
     private boolean flashlightOn = false;
+    private boolean overlayActive = false;
     private String pendingImageInstruction;
     private boolean expectingImage;
     private boolean expectingFile;
@@ -638,6 +639,8 @@ public final class MainActivity extends Activity {
         else if ("tools".equals(tab)) renderTools();
         else if ("voice".equals(tab)) renderVoice();
         else if ("logs".equals(tab)) renderLogs();
+        else if ("customize".equals(tab)) renderCustomization();
+        else if ("command".equals(tab)) renderCommandCenter();
     }
 
     // ── SECTION / CARD BUILDERS ──
@@ -734,15 +737,15 @@ public final class MainActivity extends Activity {
 
         // Outer glow ring
         orbGlow2 = new View(this);
-        GradientDrawable g2 = new GradientDrawable();
-        g2.setShape(GradientDrawable.OVAL);
-        g2.setColor(0x00FFFFFF);
-        g2.setStroke(dp(2), activeAccent);
-        orbGlow2.setBackground(g2);
+        GradientDrawable gd2 = new GradientDrawable();
+        gd2.setShape(GradientDrawable.OVAL);
+        gd2.setColor(0x00FFFFFF);
+        gd2.setStroke(dp(2), activeAccent);
+        orbGlow2.setBackground(gd2);
         orbGlow2.setAlpha(0.15f);
         orbContainer.addView(orbGlow2, dp(140), dp(140));
-        FrameLayout.LayoutParams g2lp = (FrameLayout.LayoutParams) orbGlow2.getLayoutParams();
-        g2lp.gravity = Gravity.CENTER;
+        FrameLayout.LayoutParams gd2lp = (FrameLayout.LayoutParams) orbGlow2.getLayoutParams();
+        gd2lp.gravity = Gravity.CENTER;
 
         // Mid glow ring
         orbGlow1 = new View(this);
@@ -833,7 +836,7 @@ public final class MainActivity extends Activity {
         alBg.setCornerRadius(dp(2));
         accentLine.setBackground(alBg);
         accentLine.setAlpha(0.4f);
-        LinearLayout aLp = new LinearLayout.LayoutParams(dp(120), dp(2));
+        FrameLayout.LayoutParams aLp = new FrameLayout.LayoutParams(dp(120), dp(2));
         aLp.gravity = Gravity.CENTER_HORIZONTAL;
         orbSection.addView(accentLine, aLp);
 
@@ -869,7 +872,7 @@ public final class MainActivity extends Activity {
         addQAction(g2, "🎤 Voice", "voice", null, null);
         addQAction(g2, "🧰 Tools", "tools", null, null);
         addQAction(g2, "📋 Logs", "logs", null, null);
-        addQAction(g2, "🧮 Calc", "calc:", "Expression", "15*23");
+        addQAction(g2, "🎯 Commands", "command", null, null);
         ms.addView(g2);
         page.addView(ms);
 
@@ -930,13 +933,20 @@ public final class MainActivity extends Activity {
 
     private String getProactiveGreeting() {
         int h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
-        if (h < 6) return "It's late. Your health matters — but I'm here if you need me. 💙";
-        if (h < 12) return "Good morning! Ready to make today productive? ☀️";
-        if (h < 14) return "Hope your day is going well! Need anything? 🌤";
-        if (h < 17) return "Afternoon energy check — stay hydrated! 💧";
-        if (h < 21) return "How can I help you this evening? 🌆";
-        if (h < 23) return "Winding down? Let me know if you need anything. 🌙";
-        return "Shouldn't you be sleeping? But I'm here if you need me. 🌙";
+        String[] pool = {
+            "I'm right here, ready to help with whatever you need. 😊",
+            "How's your day going? I've got your back! 💪",
+            "What can we do together today? The possibilities are endless! 🚀",
+            "I'm always here for you — just say the word. 💙",
+        };
+        String base = pool[(int)(System.currentTimeMillis() / 3600000) % pool.length];
+        if (h < 6) return "It's really late, my friend. Your health matters most — but if you need me, I'm right here. 💙 " + base;
+        if (h < 12) return "Good morning, sunshine! ☀️ Ready to make today amazing? " + base;
+        if (h < 14) return "Hope you're having a wonderful day so far! 🌤 " + base;
+        if (h < 17) return "Afternoon energy check! How are you feeling? " + base;
+        if (h < 21) return "Hey there! Hope your evening is going well. 🌆 " + base;
+        if (h < 23) return "Winding down for the night? That's great — but I'm here if you need anything. 🌙 " + base;
+        return "Hey night owl! 🦉 I admire your dedication, but please don't forget to rest. I'll be here when you wake up. 💙 " + base;
     }
 
     private String getTimeGreeting() {
@@ -1087,6 +1097,29 @@ public final class MainActivity extends Activity {
         }
         page.addView(voiceRow);
 
+        // User name / AI personalization
+        page.addView(createSection("👤", "Your Profile"));
+        LinearLayout nameRow = new LinearLayout(this);
+        nameRow.setPadding(dp(12), dp(4), dp(12), dp(4));
+        String currentName = memory.getUserName();
+        Button nameBtn = glowButton(currentName != null ? "✏️ Name: " + currentName : "✏️ Set Your Name", activeAccent);
+        nameBtn.setTextSize(10);
+        nameBtn.setOnClickListener(v -> {
+            bounceView(nameBtn);
+            prompt("Your Name", "Enter your name", currentName != null ? currentName : "", v2 -> {
+                memory.learnName(v2.trim());
+                Toast.makeText(this, "Nice to meet you, " + v2.trim() + "! 😊", Toast.LENGTH_SHORT).show();
+                renderCustomization();
+            });
+        });
+        nameRow.addView(nameBtn, new LinearLayout.LayoutParams(0, dp(42), 1));
+        View ns = new View(this); ns.setLayoutParams(new LinearLayout.LayoutParams(dp(6), 0));
+        nameRow.addView(ns);
+        Button quizStatsBtn = smallBtn("📊 Quiz Stats");
+        quizStatsBtn.setOnClickListener(v -> { bounceView(quizStatsBtn); showResult("📊 Quiz Performance", memory.getQuizSummary(), false); });
+        nameRow.addView(quizStatsBtn, new LinearLayout.LayoutParams(0, dp(42), 1));
+        page.addView(nameRow);
+
         // Wake word
         page.addView(createSection("🔊", "Wake Word"));
         LinearLayout wakeRow = new LinearLayout(this);
@@ -1132,24 +1165,69 @@ public final class MainActivity extends Activity {
     // ── SMART BEHAVIOR ──
 
     private void startSmartBehavior() {
+        // Time-based proactive messages
         main.postDelayed(() -> {
             int h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
-            if (h >= 0 && h < 6) {
-                sendNotification("🌙 JARVIS", "You should sleep now. Your health matters too.");
-            } else if (h >= 6 && h < 9) {
-                sendNotification("☀️ Good Morning!", getMorningMessage());
-            } else if (h >= 12 && h < 14) {
-                sendNotification("🌤 Afternoon Check", "Stay productive! Take a short break if needed.");
-            } else if (h >= 18 && h < 20) {
-                sendNotification("🌆 Evening Wind-Down", "Great work today! Time to relax.");
-            } else if (h >= 21 && h < 23) {
-                sendNotification("🌙 Good Night", "Consider winding down. Sleep is essential!");
-            }
-        }, 5000);
+            String userName = memory.getUserName();
+            String name = userName != null ? ", " + userName : "";
 
+            if (h >= 0 && h < 6) {
+                sendNotification("🌙 JARVIS", "Hey" + name + ", it's really late... I'm a bit worried about you. Please get some rest — your health is everything. I'll be right here when you wake up. Sweet dreams! 💙🌟");
+            } else if (h >= 6 && h < 9) {
+                sendNotification("☀️ Good Morning" + name + "!", getMorningMessage());
+            } else if (h >= 12 && h < 14) {
+                String[] afternoon = {
+                    "Hey" + name + "! Hope your day is going great! Don't forget to take a short break, eat something tasty, and stay hydrated. You're doing amazing! 💪🌟",
+                    "Afternoon check-in" + name + "! ☀️ How's your day going? Remember to step away from the screen for 5 minutes — your eyes will thank you! 😊",
+                };
+                sendNotification("🌤 JARVIS Check-in", afternoon[(int)(System.currentTimeMillis() / 3600000) % afternoon.length]);
+            } else if (h >= 18 && h < 20) {
+                sendNotification("🌆 Evening JARVIS", "You made it through another day" + name + " — and that's something to be truly proud of! 🌟 Take some time to relax now. Read a book, listen to music, or just breathe. You deserve it! 💙");
+            } else if (h >= 21 && h < 23) {
+                sendNotification("🌙 JARVIS Night", "Hey" + name + ", just a friendly reminder to start winding down. 📱 Put the phone down, maybe read a few pages, and get ready for a great tomorrow. Sleep is your superpower! 💪🌙");
+            }
+        }, 3000);
+
+        // Proactive check-in (after 30s)
         main.postDelayed(() -> {
-            sendNotification("💬 JARVIS", "Hey, it's been a while. Hope your day is going well.");
+            String[] checkins = {
+                "Hey! It's been a while. Just wanted to say — hope you're doing okay. I'm here if you need anything. 💙",
+                "Hi there! Haven't heard from you in a bit. Just checking in — how's your day going? 😊",
+                "Hey! I miss chatting with you. Hope everything's going well. Let me know if you need help with anything! 🌟",
+                "Just a friendly hello from JARVIS! Remember — you're awesome and you've got this. 💪",
+            };
+            sendNotification("💬 JARVIS", checkins[(int)(System.currentTimeMillis() / 1800000) % checkins.length]);
         }, 30000);
+
+        // Encouragement
+        main.postDelayed(() -> {
+            String[] encouragements = {
+                "Just wanted to remind you — you're doing an amazing job. Keep going, I believe in you! 🌟",
+                "Hey! Quick reminder — you are capable of incredible things. Never doubt that! 💪✨",
+                "Sending positive vibes your way! 🌈 Remember, every small step counts towards something great. Keep shining! 💖",
+            };
+            sendNotification("💖 JARVIS Reminder", encouragements[(int)(System.currentTimeMillis() / 60000) % encouragements.length]);
+        }, 60000);
+
+        // Wellness tip
+        main.postDelayed(() -> {
+            String[] tips = {
+                "Quick check: Have you had water recently? 💧 Maybe time for a short stretch too! Your body will thank you. 💙",
+                "Time for a micro-break! 🧘 Stand up, stretch your arms, roll your shoulders — 30 seconds is all it takes to reset! ⚡",
+                "Eye care tip! 👀 Follow the 20-20-20 rule: Every 20 min, look at something 20 feet away for 20 seconds.",
+                "Deep breath moment! 🌬️ Inhale for 4 counts, hold for 4, exhale for 6. Feel the calm wash over you. 🧘",
+            };
+            sendNotification("🧘 Wellness Tip", tips[(int)(System.currentTimeMillis() / 120000) % tips.length]);
+        }, 120000);
+
+        // Memory recall - remind user of favorites after 3 min
+        main.postDelayed(() -> {
+            String[] topics = memory.getTopTopics(3);
+            if (topics.length > 0) {
+                String topic = topics[(int)(Math.random() * topics.length)];
+                sendNotification("🧠 JARVIS Knows You", "I remember you enjoy " + topic + "! Want to explore more " + topic + " content? I've got some great stuff ready! 🚀");
+            }
+        }, 180000);
     }
 
     private String getMorningMessage() {
@@ -1171,6 +1249,335 @@ public final class MainActivity extends Activity {
             case 4: return "[Emotional] ";
             default: return "";
         }
+    }
+
+    // ── COMMAND CENTER (App Control) ──
+
+    private void renderCommandCenter() {
+        titleText.setText("Command Center");
+        setAiStatus("● 50+ Controls", C_CYAN, false);
+        ScrollView sv = new ScrollView(this); sv.setBackgroundColor(C_BG);
+        LinearLayout page = new LinearLayout(this); page.setOrientation(LinearLayout.VERTICAL);
+        cardAnimDelay = 0;
+
+        // AI holographic header
+        FrameLayout cmdHeader = new FrameLayout(this);
+        cmdHeader.setPadding(dp(16), dp(16), dp(16), dp(16));
+
+        GradientDrawable hBg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{0x22FFFFFF, 0x0AFFFFFF});
+        hBg.setCornerRadius(dp(16));
+        hBg.setStroke(1, 0x33FFFFFF);
+        cmdHeader.setBackground(hBg);
+
+        LinearLayout hContent = new LinearLayout(this);
+        hContent.setOrientation(LinearLayout.VERTICAL);
+        hContent.setGravity(Gravity.CENTER);
+        hContent.setPadding(dp(8), dp(8), dp(8), dp(8));
+
+        TextView cmdIcon = new TextView(this);
+        cmdIcon.setText("🎯");
+        cmdIcon.setTextSize(42);
+        hContent.addView(cmdIcon);
+
+        TextView cmdTitle = new TextView(this);
+        cmdTitle.setText("JARVIS Command Center");
+        cmdTitle.setTextSize(16);
+        cmdTitle.setTextColor(C_TEXT);
+        cmdTitle.setTypeface(null, android.graphics.Typeface.BOLD);
+        cmdTitle.setGravity(Gravity.CENTER);
+        cmdTitle.setPadding(0, dp(4), 0, dp(2));
+        hContent.addView(cmdTitle);
+
+        TextView cmdSub = new TextView(this);
+        cmdSub.setText("50+ features • Tap to use • Voice ready");
+        cmdSub.setTextSize(10);
+        cmdSub.setTextColor(C_TEXT_SEC);
+        cmdSub.setGravity(Gravity.CENTER);
+        hContent.addView(cmdSub);
+
+        cmdHeader.addView(hContent);
+        LinearLayout.LayoutParams headerLp = new LinearLayout.LayoutParams(-1, -2);
+        headerLp.setMargins(dp(12), dp(8), dp(12), dp(8));
+        page.addView(cmdHeader, headerLp);
+
+        // ── 1. Quick App Launch (8 apps) ──
+        page.addView(createSection("🚀", "Launch Apps"));
+        GridLayout appGrid = new GridLayout(this);
+        appGrid.setColumnCount(4);
+        appGrid.setPadding(dp(12), dp(4), dp(12), dp(4));
+
+        addCmdCard(appGrid, "▶️", "YouTube", () -> launchApp(null, "https://www.youtube.com"));
+        addCmdCard(appGrid, "🌐", "Chrome", () -> launchApp(null, "https://www.google.com"));
+        addCmdCard(appGrid, "💬", "WhatsApp", () -> launchApp("com.whatsapp", null));
+        addCmdCard(appGrid, "📸", "Instagram", () -> launchApp("com.instagram.android", null));
+        addCmdCard(appGrid, "🎵", "Spotify", () -> launchApp("com.spotify.music", null));
+        addCmdCard(appGrid, "📧", "Gmail", () -> launchApp("com.google.android.gm", null));
+        addCmdCard(appGrid, "📞", "Dialer", () -> launchApp("com.android.dialer", null));
+        addCmdCard(appGrid, "🗺️", "Maps", () -> launchApp("com.google.android.apps.maps", "https://maps.google.com"));
+        page.addView(appGrid);
+
+        // ── 2. System Controls (8) ──
+        page.addView(createSection("⚙️", "System Controls"));
+        GridLayout sysGrid = new GridLayout(this);
+        sysGrid.setColumnCount(4);
+        sysGrid.setPadding(dp(12), dp(4), dp(12), dp(4));
+        addCmdCard(sysGrid, "🔦", "Flashlight", () -> toggleFlashlight());
+        addCmdCard(sysGrid, "📶", "WiFi", () -> startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS)));
+        addCmdCard(sysGrid, "🔵", "BT", () -> startActivity(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS)));
+        addCmdCard(sysGrid, "🔊", "Volume", () -> {
+            Intent vi = new Intent(Settings.ACTION_SOUND_SETTINGS);
+            if (vi.resolveActivity(getPackageManager()) != null) startActivity(vi);
+            else Toast.makeText(this, "Open sound settings manually", Toast.LENGTH_SHORT).show();
+        });
+        addCmdCard(sysGrid, "🔋", "Battery", () -> startActivity(new Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS)));
+        addCmdCard(sysGrid, "🌓", "Bright", () -> {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.System.canWrite(this)) {
+                startActivityForResult(new Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:" + getPackageName())), REQ_WRITE_SETTINGS);
+                return;
+            }
+            showBrightnessSlider();
+        });
+        addCmdCard(sysGrid, "🔇", "DND", () -> {
+            Intent di = new Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS);
+            if (di.resolveActivity(getPackageManager()) != null) startActivity(di);
+            else Toast.makeText(this, "DND not available", Toast.LENGTH_SHORT).show();
+        });
+        addCmdCard(sysGrid, "🔄", "Rotate", () -> Toast.makeText(this, "Toggle auto-rotate in quick settings", Toast.LENGTH_SHORT).show());
+        page.addView(sysGrid);
+
+        // ── 3. AI Fun & Inspiration (10) ──
+        page.addView(createSection("🎨", "AI Fun & Inspiration"));
+        GridLayout funGrid = new GridLayout(this);
+        funGrid.setColumnCount(4);
+        funGrid.setPadding(dp(12), dp(4), dp(12), dp(4));
+        addCmdCard(funGrid, "😂", "Joke", () -> quickResult("joke:", false));
+        addCmdCard(funGrid, "💭", "Quote", () -> quickResult("quote:", false));
+        addCmdCard(funGrid, "❓", "Riddle", () -> quickResult("riddle:", false));
+        addCmdCard(funGrid, "🔮", "8-Ball", () -> prompt("8 Ball", "Ask a question", "", v -> quickResult("8ball:" + v, false)));
+        addCmdCard(funGrid, "💪", "Motivate", () -> quickResult("inspire:", false));
+        addCmdCard(funGrid, "🌟", "Fact", () -> quickResult("fact-random:", false));
+        addCmdCard(funGrid, "💡", "Advice", () -> quickResult("advice:", false));
+        addCmdCard(funGrid, "🔭", "Horoscope", () -> prompt("Horoscope", "Your sign", "aries", v -> quickResult("horoscope:" + v, false)));
+        addCmdCard(funGrid, "🤗", "Compliment", () -> {
+            String[] c = {"You're amazing!", "You got this!", "You light up every room!", "Your smile is contagious!", "You make the world better!"};
+            showResult("💖 JARVIS Says", c[(int)(Math.random() * c.length)], false);
+        });
+        addCmdCard(funGrid, "✨", "Affirmation", () -> {
+            String[] a = {"I am capable.", "I am enough.", "Today will be great.", "I attract positivity.", "I am strong."};
+            showResult("✨ Daily Affirmation", a[(int)(Math.random() * a.length)], false);
+        });
+        page.addView(funGrid);
+
+        // ── 4. Productivity Tools (10) ──
+        page.addView(createSection("⚡", "Productivity"));
+        GridLayout prodGrid = new GridLayout(this);
+        prodGrid.setColumnCount(4);
+        prodGrid.setPadding(dp(12), dp(4), dp(12), dp(4));
+        addCmdCard(prodGrid, "🧮", "Calc", () -> prompt("Calc", "Expression", "15*23", v -> quickResult("calc:" + v, false)));
+        addCmdCard(prodGrid, "🌤", "Weather", () -> prompt("Weather", "City", "Mumbai", v -> quickResult("weather:" + v, false)));
+        addCmdCard(prodGrid, "📰", "News", () -> prompt("News", "Topic", "tech", v -> quickResult("news:" + v, false)));
+        addCmdCard(prodGrid, "🌐", "Translate", () -> prompt("Translate", "lang|text", "hi|Hello", v -> quickResult("translate:" + v, false)));
+        addCmdCard(prodGrid, "📝", "Notes", () -> prompt("Add Note", "Note text", "", v -> { memory.addNote(firstLine(v), v); Toast.makeText(this, "✅ Note saved", Toast.LENGTH_SHORT).show(); }));
+        addCmdCard(prodGrid, "☑️", "Todo", () -> prompt("Add Todo", "Task", "", v -> { memory.addTodo(v); Toast.makeText(this, "✅ Todo added", Toast.LENGTH_SHORT).show(); }));
+        addCmdCard(prodGrid, "⏰", "Remind", () -> prompt("Reminder", "Text | min", "Break | 10", v -> scheduleReminder(v)));
+        addCmdCard(prodGrid, "💰", "Crypto", () -> prompt("Crypto", "Coin", "bitcoin", v -> quickResult("crypto:" + v, false)));
+        addCmdCard(prodGrid, "📈", "Stock", () -> prompt("Stock", "Symbol", "AAPL", v -> quickResult("stock:" + v, false)));
+        addCmdCard(prodGrid, "💱", "Currency", () -> prompt("Currency", "From To", "USD INR", v -> quickResult("currency:" + v, false)));
+        page.addView(prodGrid);
+
+        // ── 5. Wellness & Self-Care (8) ──
+        page.addView(createSection("🧘", "Wellness & Self-Care"));
+        GridLayout wellGrid = new GridLayout(this);
+        wellGrid.setColumnCount(4);
+        wellGrid.setPadding(dp(12), dp(4), dp(12), dp(4));
+
+        addCmdCard(wellGrid, "💧", "Water", () -> Toast.makeText(this, "💧 Time to drink water!", Toast.LENGTH_SHORT).show());
+        addCmdCard(wellGrid, "🧘", "Breathe", () -> {
+            showResult("🧘 Breathing Exercise",
+                    "1. Inhale deeply (4 sec)\n2. Hold (4 sec)\n3. Exhale slowly (6 sec)\n4. Repeat 5 times\n\nFeel calmer already. 🌿", false);
+        });
+        addCmdCard(wellGrid, "🙏", "Gratitude", () -> {
+            showResult("🙏 Gratitude Prompt",
+                    "Take a moment to think of:\n\n1. One thing you're grateful for\n2. One person who made you smile\n3. One thing you achieved today\n\n✨ You are blessed.", false);
+        });
+        addCmdCard(wellGrid, "📓", "Journal", () -> prompt("Journal Prompt", "Write your thoughts", "", v -> {
+            memory.addNote("Journal " + new SimpleDateFormat("MMM dd", Locale.getDefault()).format(new Date()), v);
+            Toast.makeText(this, "📓 Journal entry saved", Toast.LENGTH_SHORT).show();
+        }));
+        addCmdCard(wellGrid, "🎯", "Focus", () -> quickResult("focus:25", false));
+        addCmdCard(wellGrid, "🌙", "Sleep", () -> {
+            int h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
+            if (h >= 22 || h < 6) showResult("🌙 Sleep Reminder", "It's late! Your health matters. Try:\n\n1. Put phone down 📱\n2. Dim lights 🌓\n3. Deep breaths 🧘\n4. Sweet dreams 🌙", false);
+            else showResult("🌙 Sleep Tip", "Going to bed soon? Try:\n\n• No screens 30min before bed\n• Read a book 📖\n• Warm tea ☕\n• Set alarm for tomorrow ⏰", false);
+        });
+        addCmdCard(wellGrid, "🏃", "Stretch", () -> {
+            showResult("🏃 Quick Stretch",
+                    "Take a 2-min stretch break:\n\n1. Neck rolls (30s)\n2. Shoulder shrugs (30s)\n3. Arm stretches (30s)\n4. Deep breaths (30s)\n\nFeel refreshed! ⚡", false);
+        });
+        addCmdCard(wellGrid, "🧠", "Mood", () -> {
+            String[] moods = {"😊 Happy", "😐 Neutral", "😢 Sad", "😤 Stressed", "😴 Tired", "⚡ Energetic"};
+            showResult("🧠 Mood Tracker", "How are you feeling?\n\n" + String.join("  ", moods) + "\n\nI'm here for you no matter what. 💙", false);
+        });
+        page.addView(wellGrid);
+
+        // ── 6. Quick Tools (8) ──
+        page.addView(createSection("🛠️", "Quick Tools"));
+        GridLayout toolGrid = new GridLayout(this);
+        toolGrid.setColumnCount(4);
+        toolGrid.setPadding(dp(12), dp(4), dp(12), dp(4));
+        addCmdCard(toolGrid, "🔍", "Search", () -> prompt("Web Search", "Query", "AI", v -> quickResult("web:" + v, false)));
+        addCmdCard(toolGrid, "📖", "Wiki", () -> prompt("Wikipedia", "Topic", "AI", v -> quickResult("wiki:" + v, false)));
+        addCmdCard(toolGrid, "📚", "Dict", () -> prompt("Dictionary", "Word", "serendipity", v -> quickResult("dictionary:" + v, false)));
+        addCmdCard(toolGrid, "🍔", "Recipe", () -> prompt("Recipe", "Dish", "pasta", v -> quickResult("recipe:" + v, false)));
+        addCmdCard(toolGrid, "💻", "Code", () -> prompt("Code Assist", "Request", "hello world in python", v -> quickResult("code:" + v, false)));
+        addCmdCard(toolGrid, "📊", "Graphs", () -> quickResult("system-graphs:", false));
+        addCmdCard(toolGrid, "⚡", "Speed", () -> quickResult("speed-test:", false));
+        addCmdCard(toolGrid, "🌙", "Night", () -> {
+            showResult("🌙 Night Mode Check",
+                    "Late night tip: Enable blue light filter in your phone settings to protect your eyes.\n\n" +
+                    (java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) >= 21 ?
+                    "It's late — consider resting soon 💤" : "Good time to be productive! ⚡"), false);
+        });
+        page.addView(toolGrid);
+
+        // ── 7. Automation Panel ──
+        page.addView(createSection("⚡", "Smart Automation"));
+        LinearLayout autoRow = new LinearLayout(this); autoRow.setPadding(dp(12), dp(4), dp(12), dp(4));
+        addCmdBtn(autoRow, "🌅 Morning", v -> showResult("🌅 Morning Routine", "• 6:00 AM Wake up ☀️\n• News briefing 📰\n• Weather check 🌤\n• Daily quote 💭\n• Today's schedule 📅", false));
+        View a1 = new View(this); a1.setLayoutParams(new LinearLayout.LayoutParams(dp(4), 0));
+        autoRow.addView(a1);
+        addCmdBtn(autoRow, "💼 Work", v -> showResult("💼 Work Mode", "• Focus timer: 25 min 🎯\n• Todo review ☑️\n• Meeting notes 📝\n• Calendar check 📅\n• DND enabled 🔇", false));
+        View a2 = new View(this); a2.setLayoutParams(new LinearLayout.LayoutParams(dp(4), 0));
+        autoRow.addView(a2);
+        addCmdBtn(autoRow, "🌙 Night", v -> showResult("🌙 Night Mode", "• Dark theme enabled 🌓\n• Blue light filter 🔵\n• Bedtime reminder 🌙\n• Gratitude journal 📓\n• Sleep sounds 🎵", false));
+        page.addView(autoRow);
+
+        // ── 8. Common Voice Commands ──
+        page.addView(createSection("🎤", "Try Voice Commands"));
+        String[][] cmds = {
+            {"\"What's the weather in London?\"", "🌤 Weather lookup"},
+            {"\"Tell me a joke\"", "😂 Random joke"},
+            {"\"Open YouTube\"", "▶️ Launch app"},
+            {"\"Inspire me\"", "💪 Motivational quote"},
+            {"\"Calculate 15 * 23\"", "🧮 Quick math"},
+            {"\"Translate hello to Hindi\"", "🌐 Translation"},
+            {"\"Set a reminder for 10 min\"", "⏰ Smart reminder"},
+            {"\"What's the news in tech?\"", "📰 Latest headlines"},
+            {"\"Give me a fact\"", "🌟 Random knowledge"},
+            {"\"Start focus mode\"", "🎯 Pomodoro timer"},
+        };
+        for (String[] c : cmds) page.addView(createGlassCard(c[0], c[1]));
+
+        View spacer = new View(this);
+        spacer.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(24)));
+        page.addView(spacer);
+        sv.addView(page);
+        content.removeAllViews();
+        content.addView(sv);
+    }
+
+    // ── Command Center Helpers ──
+
+    private void addCmdCard(GridLayout grid, String icon, String label, Runnable action) {
+        FrameLayout card = new FrameLayout(this);
+        card.setPadding(dp(3), dp(3), dp(3), dp(3));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0x0AFFFFFF);
+        bg.setStroke(1, 0x15FFFFFF);
+        bg.setCornerRadius(dp(10));
+        card.setBackground(bg);
+
+        LinearLayout content2 = new LinearLayout(this);
+        content2.setOrientation(LinearLayout.VERTICAL);
+        content2.setGravity(Gravity.CENTER);
+        content2.setPadding(dp(4), dp(8), dp(4), dp(8));
+
+        TextView iconV = new TextView(this);
+        iconV.setText(icon);
+        iconV.setTextSize(18);
+        content2.addView(iconV);
+
+        TextView labelV = new TextView(this);
+        labelV.setText(label);
+        labelV.setTextSize(8);
+        labelV.setTextColor(C_TEXT_SEC);
+        labelV.setTypeface(null, android.graphics.Typeface.BOLD);
+        labelV.setPadding(0, dp(2), 0, 0);
+        content2.addView(labelV);
+
+        card.addView(content2);
+        card.setOnClickListener(v -> { bounceView(card); action.run(); });
+
+        GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
+        lp.width = 0; lp.height = dp(58);
+        lp.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
+        lp.setMargins(dp(2), dp(2), dp(2), dp(2));
+        grid.addView(card, lp);
+    }
+
+    private void addCmdBtn(LinearLayout parent, String label, View.OnClickListener click) {
+        Button b = glowButton(label, activeAccent);
+        b.setTextSize(9);
+        b.setOnClickListener(v -> { bounceView(b); click.onClick(v); });
+        parent.addView(b, new LinearLayout.LayoutParams(0, dp(38), 1));
+    }
+
+    private void launchApp(String pkg, String url) {
+        try {
+            if (pkg != null) {
+                Intent intent = getPackageManager().getLaunchIntentForPackage(pkg);
+                if (intent != null) startActivity(intent);
+                else if (url != null) startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+                else Toast.makeText(this, pkg + " not installed", Toast.LENGTH_SHORT).show();
+            } else if (url != null) {
+                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+            }
+        } catch (Exception e) {
+            Toast.makeText(this, "Cannot open", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void quickResult(String cmd, boolean speak) { runTool(cmd, speak); }
+
+    private void addAppCard(GridLayout grid, String icon, String label, View.OnClickListener click) {
+        FrameLayout card = new FrameLayout(this);
+        card.setPadding(dp(4), dp(4), dp(4), dp(4));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0x0AFFFFFF);
+        bg.setStroke(1, 0x15FFFFFF);
+        bg.setCornerRadius(dp(12));
+        card.setBackground(bg);
+
+        LinearLayout content2 = new LinearLayout(this);
+        content2.setOrientation(LinearLayout.VERTICAL);
+        content2.setGravity(Gravity.CENTER);
+        content2.setPadding(dp(8), dp(12), dp(8), dp(12));
+
+        TextView iconV = new TextView(this);
+        iconV.setText(icon);
+        iconV.setTextSize(26);
+        content2.addView(iconV);
+
+        View sp = new View(this);
+        sp.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(3)));
+        content2.addView(sp);
+
+        TextView labelV = new TextView(this);
+        labelV.setText(label);
+        labelV.setTextSize(9);
+        labelV.setTextColor(C_TEXT_SEC);
+        labelV.setTypeface(null, android.graphics.Typeface.BOLD);
+        content2.addView(labelV);
+
+        card.addView(content2);
+        card.setOnClickListener(v -> { bounceView(card); click.onClick(v); });
+
+        GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
+        lp.width = 0; lp.height = dp(68);
+        lp.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
+        lp.setMargins(dp(3), dp(3), dp(3), dp(3));
+        grid.addView(card, lp);
     }
 
     // ── CHAT ──
@@ -1344,6 +1751,50 @@ public final class MainActivity extends Activity {
         lateBtn.setOnClickListener(v -> { bounceView(lateBtn); Toast.makeText(this, "Late night detection active", Toast.LENGTH_SHORT).show(); });
         bhRow.addView(lateBtn, new LinearLayout.LayoutParams(0, dp(38), 1));
         page.addView(bhRow);
+
+        // Floating overlay section
+        page.addView(createSection("💠", "Floating Overlay"));
+        LinearLayout ovRow = new LinearLayout(this); ovRow.setPadding(dp(12), dp(4), dp(12), dp(4));
+        Button ovBtn = glowButton(overlayActive ? "🔴 Overlay: ON" : "⚪ Overlay: OFF", overlayActive ? activeAccent : null);
+        ovBtn.setTextSize(10);
+        ovBtn.setOnClickListener(v -> {
+            bounceView(ovBtn);
+            if (overlayActive) {
+                stopService(new Intent(this, FloatingOverlayService.class));
+                overlayActive = false;
+                Toast.makeText(this, "Overlay stopped", Toast.LENGTH_SHORT).show();
+                renderSettings();
+            } else {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+                    Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName()));
+                    startActivityForResult(intent, 99);
+                    Toast.makeText(this, "Grant overlay permission first", Toast.LENGTH_SHORT).show();
+                } else {
+                    startForegroundService(new Intent(this, FloatingOverlayService.class));
+                    overlayActive = true;
+                    Toast.makeText(this, "✨ Floating JARVIS is active!", Toast.LENGTH_SHORT).show();
+                    renderSettings();
+                }
+            }
+        });
+        ovRow.addView(ovBtn, new LinearLayout.LayoutParams(0, dp(42), 1));
+        View ovs = new View(this); ovs.setLayoutParams(new LinearLayout.LayoutParams(dp(6), 0));
+        ovRow.addView(ovs);
+
+        Button ovGuideBtn = smallBtn("ℹ️ How to use");
+        ovGuideBtn.setOnClickListener(v -> {
+            bounceView(ovGuideBtn);
+            showResult("Floating JARVIS",
+                    "✨ Floating JARVIS\n\n" +
+                    "• A glowing AI icon appears over all apps\n" +
+                    "• Drag to move it anywhere\n" +
+                    "• Tap to open mini chat panel\n" +
+                    "• Type any question or command\n" +
+                    "• Tap ✕ to close the overlay\n\n" +
+                    "Great for multitasking! Ask JARVIS while using other apps.", false);
+        });
+        ovRow.addView(ovGuideBtn, new LinearLayout.LayoutParams(0, dp(42), 1));
+        page.addView(ovRow);
 
         LinearLayout ls = createSection("📋", "Recent Logs"); page.addView(ls);
         JSONArray la = logs.all();
@@ -1568,6 +2019,8 @@ public final class MainActivity extends Activity {
             if ("voice".equals(cmd)) openTab("voice");
             else if ("tools".equals(cmd)) openTab("tools");
             else if ("logs".equals(cmd)) openTab("logs");
+            else if ("command".equals(cmd)) openTab("command");
+            else if ("customize".equals(cmd)) openTab("customize");
             else if (cmd.startsWith("pick-ocr")) pickImage("Extract text from this image.");
             else if (cmd.startsWith("pick-vision")) pickImage("Describe this image in detail.");
             else if (cmd.startsWith("pick-file")) pickFile();
@@ -1642,16 +2095,16 @@ public final class MainActivity extends Activity {
         lp.setMargins(dp(3), dp(3), dp(3), dp(3));
         g.addView(card, lp);
     }
-        GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
-        lp.width = 0; lp.height = dp(44); lp.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
-        lp.setMargins(dp(3), dp(3), dp(3), dp(3)); g.addView(b, lp);
-    }
 
     private void loadChatBubbles() {
         chatList.removeAllViews(); chatList.addView(typingIndicator);
         JSONArray chat = memory.chat();
         if (chat.length() == 0) {
-            appendBubble("assistant", "Hello, I'm JARVIS. How can I help?\n\n💡 Try: \"weather:Mumbai\", \"news:tech\", \"calc:15*23\", or just chat naturally!");
+            String[] welcomes = {
+                "Hey there! 👋 I'm JARVIS, your friendly AI companion. I can help with weather, news, calculations, translations, and so much more! Just ask me anything — I'm here for you. 💙\n\n💡 Try: \"weather:Mumbai\", \"news:tech\", \"tell me a joke\", or just chat naturally!",
+                "Hello! 😊 Welcome back! I'm JARVIS — think of me as your smart, caring friend who's always ready to help. Need info, want to chat, or just bored? I've got you covered! 🚀\n\nTry asking me anything!",
+            };
+            appendBubble("assistant", welcomes[(int)(System.currentTimeMillis() / 3600000) % welcomes.length]);
             return;
         }
         for (int i = 0; i < chat.length(); i++) {
@@ -1968,6 +2421,20 @@ public final class MainActivity extends Activity {
         if (text.isEmpty()) return;
         chatInput.setText(""); hideKeyboard(chatInput);
         memory.addChat("user", text); appendBubble("user", text);
+
+        // Track topic/interest
+        String lower = text.toLowerCase();
+        if (lower.contains("weather") || lower.contains("mausam")) memory.trackTopic("weather");
+        else if (lower.contains("news") || lower.contains("khabar")) memory.trackTopic("news");
+        else if (lower.contains("crypto") || lower.contains("stock") || lower.contains("share")) memory.trackTopic("finance");
+        else if (lower.contains("youtube") || lower.contains("video")) memory.trackTopic("youtube");
+        else if (lower.contains("code") || lower.contains("program") || lower.contains("app")) memory.trackTopic("coding");
+        else if (lower.contains("game") || lower.contains("movie") || lower.contains("music")) memory.trackTopic("entertainment");
+        else if (lower.contains("education") || lower.contains("study") || lower.contains("learn") || lower.contains("class") || lower.contains("ncert")) memory.trackTopic("education");
+        else if (lower.contains("joke") || lower.contains("funny") || lower.contains("laugh")) memory.trackTopic("fun");
+        else if (lower.contains("health") || lower.contains("diet") || lower.contains("exercise") || lower.contains("workout")) memory.trackTopic("health");
+        else memory.trackTopic("general");
+
         setBusy(true); showTypingIndicator(true);
         setAiStatus("● Thinking...", C_CYAN, true);
         executor.execute(() -> {
@@ -1975,13 +2442,194 @@ public final class MainActivity extends Activity {
             try { result = brain.run(text); logs.add("INFO", "Chat: " + text.substring(0, Math.min(50, text.length()))); }
             catch (Exception e) { result = "Error: " + e.getMessage(); logs.add("ERROR", result); }
             String fr = result; memory.addChat("assistant", fr);
+            String finalResult = fr;
             main.post(() -> {
-                setBusy(false); showTypingIndicator(false); appendBubble("assistant", fr);
+                setBusy(false); showTypingIndicator(false);
+
+                // Detect quiz content and show interactive UI
+                if (finalResult.contains("Q:") && finalResult.contains("A)") && finalResult.contains("Correct:")) {
+                    appendBubble("assistant", finalResult);
+                    showInteractiveQuiz(finalResult);
+                } else {
+                    appendBubble("assistant", finalResult);
+                }
+
                 setAiStatus("● AI Ready", C_GREEN, true);
-                if (speechMode) speak(fr);
-                sendNotification("JARVIS", fr.length() > 80 ? fr.substring(0, 80) + "..." : fr);
+                if (speechMode) speak(finalResult);
+                sendNotification("JARVIS", finalResult.length() > 80 ? finalResult.substring(0, 80) + "..." : finalResult);
             });
         });
+    }
+
+    private void showInteractiveQuiz(String quizText) {
+        String[] lines = quizText.split("\n");
+        String currentQ = "";
+        String[] options = new String[4];
+        String correct = "";
+        String explanation = "";
+        int optIdx = 0;
+        final java.util.ArrayList<String[]> questions = new java.util.ArrayList<>();
+        final java.util.ArrayList<String> answers = new java.util.ArrayList<>();
+        final java.util.ArrayList<String> explanations = new java.util.ArrayList<>();
+
+        for (String line : lines) {
+            line = line.trim();
+            if (line.startsWith("Q:")) {
+                if (!currentQ.isEmpty() && optIdx > 0) {
+                    questions.add(new String[]{currentQ, options[0], options[1], options[2], options[3]});
+                    answers.add(correct);
+                    explanations.add(explanation);
+                }
+                currentQ = line.substring(2).trim();
+                options = new String[4]; optIdx = 0; correct = ""; explanation = "";
+            } else if (line.matches("^[A-D]\\)\\s.*")) {
+                if (optIdx < 4) options[optIdx++] = line.substring(2).trim();
+            } else if (line.startsWith("Correct:")) {
+                correct = line.substring(8).trim();
+            } else if (line.startsWith("Explanation:")) {
+                explanation = line.substring(12).trim();
+            }
+        }
+        if (!currentQ.isEmpty() && optIdx > 0) {
+            questions.add(new String[]{currentQ, options[0], options[1], options[2], options[3]});
+            answers.add(correct);
+            explanations.add(explanation);
+        }
+
+        if (questions.isEmpty()) return;
+
+        final int[] qIdx = {0};
+        final int[] score = {0};
+        final int[] total = {questions.size()};
+
+        showQuizCard(questions, answers, explanations, qIdx, score, total);
+    }
+
+    private void showQuizCard(final java.util.ArrayList<String[]> questions, final java.util.ArrayList<String> answers,
+                              final java.util.ArrayList<String> explanations, final int[] qIdx, final int[] score, final int[] total) {
+        if (qIdx[0] >= questions.size()) {
+            memory.addQuizScore(score[0], total[0], "chat");
+            appendBubble("assistant", "🎉 Quiz Complete! You scored " + score[0] + "/" + total[0] + " (" + (total[0] > 0 ? score[0] * 100 / total[0] : 0) + "%)\n" + memory.getQuizSummary());
+            return;
+        }
+
+        String[] q = questions.get(qIdx[0]);
+        LinearLayout quizCard = new LinearLayout(this);
+        quizCard.setOrientation(LinearLayout.VERTICAL);
+        quizCard.setPadding(dp(12), dp(12), dp(12), dp(12));
+
+        GradientDrawable qBg = new GradientDrawable();
+        qBg.setColor(0x14161E);
+        qBg.setStroke(1, 0x222A2A3E);
+        qBg.setCornerRadius(dp(12));
+        quizCard.setBackground(qBg);
+
+        // Question number
+        TextView qNum = new TextView(this);
+        qNum.setText("Q" + (qIdx[0] + 1) + "/" + total[0]);
+        qNum.setTextSize(9);
+        qNum.setTextColor(activeAccent);
+        qNum.setTypeface(null, android.graphics.Typeface.BOLD);
+        quizCard.addView(qNum);
+
+        // Question text
+        TextView qText = new TextView(this);
+        qText.setText(q[0]);
+        qText.setTextSize(13);
+        qText.setTextColor(C_TEXT);
+        qText.setPadding(0, dp(4), 0, dp(8));
+        qText.setLineSpacing(dp(2), 1.0f);
+        quizCard.addView(qText);
+
+        String[] letters = {"A", "B", "C", "D"};
+        for (int i = 1; i < q.length && q[i] != null; i++) {
+            final int optIdx = i;
+            Button optBtn = new Button(this);
+            optBtn.setText(letters[i-1] + ")  " + q[i]);
+            optBtn.setAllCaps(false);
+            optBtn.setTextSize(11);
+            optBtn.setTextColor(C_TEXT_SEC);
+            optBtn.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
+            optBtn.setPadding(dp(10), dp(6), dp(10), dp(6));
+            optBtn.setMinHeight(0);
+
+            GradientDrawable obg = new GradientDrawable();
+            obg.setColor(0x0AFFFFFF);
+            obg.setStroke(1, 0x15FFFFFF);
+            obg.setCornerRadius(dp(8));
+            optBtn.setBackground(obg);
+
+            LinearLayout.LayoutParams olp = new LinearLayout.LayoutParams(-1, dp(36));
+            olp.setMargins(0, dp(3), 0, dp(3));
+            quizCard.addView(optBtn, olp);
+
+            final String selectedLetter = letters[i-1];
+            final String correctLetter = answers.get(qIdx[0]);
+            final String explanation = explanations.get(qIdx[0]);
+
+            optBtn.setOnClickListener(v -> {
+                boolean isCorrect = selectedLetter.equalsIgnoreCase(correctLetter);
+                if (isCorrect) score[0]++;
+
+                // Highlight correct/wrong
+                for (int j = 0; j < quizCard.getChildCount(); j++) {
+                    View child = quizCard.getChildAt(j);
+                    if (child instanceof Button) {
+                        Button b = (Button) child;
+                        GradientDrawable bg2 = (GradientDrawable) b.getBackground();
+                        String btnText = b.getText().toString();
+                        if (btnText.startsWith(correctLetter + ")")) {
+                            bg2.setColor(0xFF10B981);
+                            bg2.setStroke(2, 0xFF10B981);
+                            b.setTextColor(Color.WHITE);
+                        } else if (btnText.startsWith(selectedLetter + ")")) {
+                            bg2.setColor(isCorrect ? 0xFF10B981 : 0xFFFF3B3B);
+                            bg2.setStroke(2, isCorrect ? 0xFF10B981 : 0xFFFF3B3B);
+                            b.setTextColor(Color.WHITE);
+                        } else {
+                            b.setEnabled(false);
+                            b.setAlpha(0.4f);
+                        }
+                    }
+                }
+
+                // Explanation
+                if (explanation != null && !explanation.isEmpty()) {
+                    TextView expV = new TextView(this);
+                    expV.setText("💡 " + explanation);
+                    expV.setTextSize(10);
+                    expV.setTextColor(0xFFCBD5E1);
+                    expV.setPadding(0, dp(6), 0, dp(4));
+                    expV.setLineSpacing(dp(1), 1.0f);
+                    quizCard.addView(expV);
+                }
+
+                // Next button
+                Button nextBtn = new Button(this);
+                nextBtn.setText(qIdx[0] + 1 >= questions.size() ? "🎉 See Results" : "Next ➤");
+                nextBtn.setAllCaps(false);
+                nextBtn.setTextSize(11);
+                nextBtn.setTextColor(Color.WHITE);
+                GradientDrawable nbg = new GradientDrawable();
+                nbg.setColor(activeAccent);
+                nbg.setCornerRadius(dp(8));
+                nextBtn.setBackground(nbg);
+                nextBtn.setPadding(dp(12), dp(6), dp(12), dp(6));
+                nextBtn.setMinHeight(0);
+                LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(-1, dp(36));
+                nlp.setMargins(0, dp(6), 0, 0);
+                quizCard.addView(nextBtn, nlp);
+
+                nextBtn.setOnClickListener(v2 -> {
+                    qIdx[0]++;
+                    chatList.removeView(quizCard);
+                    showQuizCard(questions, answers, explanations, qIdx, score, total);
+                });
+            });
+        }
+
+        chatList.addView(quizCard);
+        if (chatScroll != null) main.postDelayed(() -> chatScroll.fullScroll(View.FOCUS_DOWN), 80);
     }
 
     private void stopListening() {
@@ -2138,6 +2786,16 @@ public final class MainActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQ_WRITE_SETTINGS) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.System.canWrite(this)) Toast.makeText(this, "Settings granted!", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (requestCode == 99) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.canDrawOverlays(this)) {
+                startForegroundService(new Intent(this, FloatingOverlayService.class));
+                overlayActive = true;
+                Toast.makeText(this, "✨ Floating JARVIS is active!", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(this, "Overlay permission denied", Toast.LENGTH_SHORT).show();
+            }
             return;
         }
         if (resultCode != RESULT_OK || data == null || data.getData() == null) { expectingImage = false; expectingFile = false; return; }
