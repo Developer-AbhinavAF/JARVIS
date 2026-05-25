@@ -12,7 +12,8 @@ lxml==4.9.3
 pandas==2.1.4
 numpy==1.26.4
 sympy==1.12  # For math/physics solving
-groq==0.4.1
+groq==0.9.0
+httpx==0.27.0
 pillow==10.2.0
 pywin32==306; platform_system=="Windows"
 plyer==2.1.0

@@ -923,6 +923,409 @@ def timer(seconds: int) -> str:
         return "Invalid time. Please specify seconds like '60' for 1 minute."
 
 
+# ──────────────────────────────────────────────
+# NASA API tools
+# ──────────────────────────────────────────────
+def nasa_apod() -> str:
+    """Get NASA Astronomy Picture of the Day with explanation."""
+    key = (config.NASA_API_KEY or "").strip()
+    if not key:
+        return "NASA_API_KEY not configured."
+    try:
+        resp = requests.get(f"https://api.nasa.gov/planetary/apod?api_key={key}", timeout=15)
+        resp.raise_for_status()
+        d = resp.json()
+        return (f"Astronomy Picture of the Day\nTitle: {d.get('title')}\nDate: {d.get('date')}\n"
+                f"{d.get('explanation')}\nImage: {d.get('url', d.get('hdurl'))}")
+    except Exception as e:
+        logger.exception("NASA APOD failed")
+        return f"NASA APOD error: {e}"
+
+def nasa_mars_rover(sol_or_latest: str = "latest") -> str:
+    """Get Mars rover photos from Curiosity. Pass 'latest' or a sol number."""
+    key = (config.NASA_API_KEY or "").strip()
+    if not key:
+        return "NASA_API_KEY not configured."
+    try:
+        sol = "" if sol_or_latest.strip().lower() in ("", "latest") else f"&sol={sol_or_latest.strip()}"
+        url = f"https://api.nasa.gov/mars-photos/api/v1/rovers/curiosity/photos?page=1&api_key={key}"
+        if sol:
+            url += sol
+        else:
+            url += "&latest=1"
+        resp = requests.get(url, timeout=15)
+        resp.raise_for_status()
+        photos = resp.json().get("photos", [])
+        out = ["Mars Rover – Curiosity"]
+        for i, p in enumerate(photos[:5]):
+            cam = p.get("camera", {})
+            out.append(f"{i+1}. {cam.get('full_name', 'n/a')} (sol {p.get('sol')})\n   {p.get('img_src')}")
+        return "\n".join(out) if photos else "No Mars rover photos found."
+    except Exception as e:
+        logger.exception("NASA Mars rover failed")
+        return f"NASA Mars rover error: {e}"
+
+def nasa_earth(lat_lon: str = "19.076,72.8777") -> str:
+    """Get NASA Earth satellite imagery for given lat,lon."""
+    key = (config.NASA_API_KEY or "").strip()
+    if not key:
+        return "NASA_API_KEY not configured."
+    try:
+        parts = lat_lon.split(",")
+        lat, lon = parts[0].strip(), parts[1].strip() if len(parts) > 1 else "72.8777"
+        resp = requests.get(f"https://api.nasa.gov/planetary/earth/imagery?lon={lon}&lat={lat}&dim=0.15&api_key={key}", timeout=15)
+        resp.raise_for_status()
+        d = resp.json()
+        return f"Earth imagery\nLat: {lat} Lon: {lon}\nImage URL: {d.get('url', f'https://api.nasa.gov/planetary/earth/imagery?lon={lon}&lat={lat}&dim=0.15&api_key={key}')}"
+    except Exception as e:
+        logger.exception("NASA Earth failed")
+        return f"NASA Earth imagery error: {e}"
+
+def nasa_iss() -> str:
+    """Get current ISS location."""
+    try:
+        resp = requests.get("http://api.open-notify.org/iss-now.json", timeout=15)
+        resp.raise_for_status()
+        d = resp.json()
+        pos = d.get("iss_position", {})
+        lat, lon = pos.get("latitude", "?"), pos.get("longitude", "?")
+        return f"ISS location\nTimestamp: {d.get('timestamp')}\nLatitude: {lat}\nLongitude: {lon}\nMap: https://www.google.com/maps?q={lat},{lon}"
+    except Exception as e:
+        logger.exception("ISS location failed")
+        return f"ISS location error: {e}"
+
+def nasa_library(query: str = "earth") -> str:
+    """Search NASA image and video library."""
+    try:
+        resp = requests.get(f"https://images-api.nasa.gov/search?q={requests.utils.quote(query)}&media_type=image", timeout=15)
+        resp.raise_for_status()
+        items = resp.json().get("collection", {}).get("items", [])
+        out = ["NASA image library"]
+        for i, item in enumerate(items[:5]):
+            links = item.get("links", [])
+            href = links[0].get("href", "") if links else ""
+            photos = item.get("data", [])
+            title = photos[0].get("title", "n/a") if photos else "n/a"
+            out.append(f"{i+1}. {title}\n   {href}")
+        return "\n".join(out)
+    except Exception as e:
+        logger.exception("NASA library failed")
+        return f"NASA library error: {e}"
+
+def nasa_space_data() -> str:
+    """Get near-Earth asteroid data from NASA NEO API."""
+    key = (config.NASA_API_KEY or "").strip()
+    if not key:
+        return "NASA_API_KEY not configured."
+    try:
+        resp = requests.get(f"https://api.nasa.gov/neo/rest/v1/neo/browse?page=0&size=5&api_key={key}", timeout=15)
+        resp.raise_for_status()
+        objects = resp.json().get("near_earth_objects", [])
+        out = ["Near-Earth Objects (NEO)"]
+        for i, obj in enumerate(objects[:5]):
+            dia = obj.get("estimated_diameter", {}).get("meters", {})
+            est = dia.get("estimated_diameter_max", 0) if dia else 0
+            out.append(f"{i+1}. {obj.get('name')} - diameter: {est:.1f} m, hazardous: {obj.get('is_potentially_hazardous_asteroid')}")
+        return "\n".join(out)
+    except Exception as e:
+        logger.exception("NASA NEO failed")
+        return f"NASA space data error: {e}"
+
+# ──────────────────────────────────────────────
+# Finnhub API tools
+# ──────────────────────────────────────────────
+def finnhub_stock_news(symbol: str = "AAPL") -> str:
+    """Get latest stock news from Finnhub."""
+    key = (config.FINNHUB_API_KEY or "").strip()
+    if not key:
+        return "FINNHUB_API_KEY not configured."
+    try:
+        sym = symbol.strip().upper() or "AAPL"
+        resp = requests.get(f"https://finnhub.io/api/v1/company-news?symbol={sym}&from=2025-01-01&to=2026-12-31&token={key}", timeout=15)
+        resp.raise_for_status()
+        articles = resp.json()
+        out = [f"Stock news: {sym}"]
+        for i, item in enumerate(articles[:5]):
+            out.append(f"{i+1}. {item.get('headline')}\n   {item.get('url')}")
+        return "\n".join(out)
+    except Exception as e:
+        logger.exception("Finnhub news failed")
+        return f"Finnhub stock news error: {e}"
+
+def finnhub_quote(symbol: str = "AAPL") -> str:
+    """Get real-time stock quote from Finnhub."""
+    key = (config.FINNHUB_API_KEY or "").strip()
+    if not key:
+        return "FINNHUB_API_KEY not configured."
+    try:
+        sym = symbol.strip().upper() or "AAPL"
+        resp = requests.get(f"https://finnhub.io/api/v1/quote?symbol={sym}&token={key}", timeout=15)
+        resp.raise_for_status()
+        d = resp.json()
+        return (f"{sym}\nCurrent: {d.get('c')}\nChange: {d.get('d')} ({d.get('dp')}%)\n"
+                f"High: {d.get('h')} Low: {d.get('l')}\nOpen: {d.get('o')} Prev close: {d.get('pc')}")
+    except Exception as e:
+        logger.exception("Finnhub quote failed")
+        return f"Finnhub quote error: {e}"
+
+def finnhub_company(symbol: str = "AAPL") -> str:
+    """Get company profile from Finnhub."""
+    key = (config.FINNHUB_API_KEY or "").strip()
+    if not key:
+        return "FINNHUB_API_KEY not configured."
+    try:
+        sym = symbol.strip().upper() or "AAPL"
+        resp = requests.get(f"https://finnhub.io/api/v1/stock/profile2?symbol={sym}&token={key}", timeout=15)
+        resp.raise_for_status()
+        d = resp.json()
+        if not d.get("name"):
+            return f"Company not found for {sym}"
+        return (f"{d.get('name')} ({d.get('ticker')})\nExchange: {d.get('exchange')}\n"
+                f"Industry: {d.get('finnhubIndustry')}\nMarket cap: ${d.get('marketCapitalization', 0):,.0f}M\n"
+                f"IPO: {d.get('ipo')}\nShares: {d.get('shareOutstanding', 'n/a')}")
+    except Exception as e:
+        logger.exception("Finnhub company failed")
+        return f"Finnhub company error: {e}"
+
+def finnhub_financials(symbol: str = "AAPL") -> str:
+    """Get key financial metrics from Finnhub."""
+    key = (config.FINNHUB_API_KEY or "").strip()
+    if not key:
+        return "FINNHUB_API_KEY not configured."
+    try:
+        sym = symbol.strip().upper() or "AAPL"
+        resp = requests.get(f"https://finnhub.io/api/v1/stock/metric?symbol={sym}&metric=all&token={key}", timeout=15)
+        resp.raise_for_status()
+        m = resp.json().get("metric", {})
+        if not m:
+            return f"No financial data for {sym}"
+        return (f"{sym} key metrics\nP/E: {m.get('peBasicExclExtraTTM', 'n/a')} | "
+                f"EPS: {m.get('epsBasicExclExtraTTM', 'n/a')}\n"
+                f"Revenue/TTM: {m.get('revenuePerShareTTM', 'n/a')} | "
+                f"Dividend yield: {m.get('dividendYieldIndicatedAnnual', 'n/a')}\n"
+                f"ROE: {m.get('roeTTM', 'n/a')} | Beta: {m.get('beta', 'n/a')}")
+    except Exception as e:
+        logger.exception("Finnhub financials failed")
+        return f"Finnhub financials error: {e}"
+
+def finnhub_forex(pair: str = "OANDA:EUR_USD") -> str:
+    """Get forex rate from Finnhub."""
+    key = (config.FINNHUB_API_KEY or "").strip()
+    if not key:
+        return "FINNHUB_API_KEY not configured."
+    try:
+        p = pair.strip().upper() or "OANDA:EUR_USD"
+        if ":" not in p:
+            p = "OANDA:" + p
+        resp = requests.get(f"https://finnhub.io/api/v1/quote?symbol={p}&token={key}", timeout=15)
+        resp.raise_for_status()
+        d = resp.json()
+        return (f"{p.replace('OANDA:', '')}\nRate: {d.get('c')} | High: {d.get('h')} Low: {d.get('l')} | "
+                f"Change: {d.get('d')} ({d.get('dp')}%)")
+    except Exception as e:
+        logger.exception("Finnhub forex failed")
+        return f"Finnhub forex error: {e}"
+
+def finnhub_crypto(pair: str = "BINANCE:BTCUSDT") -> str:
+    """Get crypto rate from Finnhub."""
+    key = (config.FINNHUB_API_KEY or "").strip()
+    if not key:
+        return "FINNHUB_API_KEY not configured."
+    try:
+        p = pair.strip().upper() or "BINANCE:BTCUSDT"
+        if ":" not in p:
+            p = "BINANCE:" + p
+        resp = requests.get(f"https://finnhub.io/api/v1/quote?symbol={p}&token={key}", timeout=15)
+        resp.raise_for_status()
+        d = resp.json()
+        return (f"{p.replace('BINANCE:', '')}\nPrice: {d.get('c')} | High: {d.get('h')} Low: {d.get('l')} | "
+                f"Change: {d.get('d')} ({d.get('dp')}%)")
+    except Exception as e:
+        logger.exception("Finnhub crypto failed")
+        return f"Finnhub crypto error: {e}"
+
+def finnhub_market_news() -> str:
+    """Get general market news from Finnhub."""
+    key = (config.FINNHUB_API_KEY or "").strip()
+    if not key:
+        return "FINNHUB_API_KEY not configured."
+    try:
+        resp = requests.get(f"https://finnhub.io/api/v1/news?category=general&token={key}", timeout=15)
+        resp.raise_for_status()
+        articles = resp.json()
+        out = ["Market news"]
+        for i, item in enumerate(articles[:6]):
+            out.append(f"{i+1}. {item.get('headline')}\n   {item.get('url')}")
+        return "\n".join(out)
+    except Exception as e:
+        logger.exception("Finnhub market news failed")
+        return f"Finnhub market news error: {e}"
+
+# ──────────────────────────────────────────────
+# API Ninjas tools
+# ──────────────────────────────────────────────
+def nutrition_info(query: str = "apple") -> str:
+    """Get nutrition data for a food item via API Ninjas."""
+    key = (config.API_NINJAS_KEY or "").strip()
+    if not key:
+        return "API_NINJAS_KEY not configured."
+    try:
+        resp = requests.get(f"https://api.api-ninjas.com/v1/nutrition?query={requests.utils.quote(query)}",
+                          headers={"X-Api-Key": key}, timeout=15)
+        resp.raise_for_status()
+        items = resp.json()
+        out = ["Nutrition"]
+        for i, item in enumerate(items):
+            out.append(f"{i+1}. {item.get('name')}\n   Calories: {item.get('calories', '0')} | "
+                       f"Protein: {item.get('protein_g', '0')}g | Carbs: {item.get('carbohydrates_total_g', '0')}g | "
+                       f"Fat: {item.get('fat_total_g', '0')}g")
+        return "\n".join(out)
+    except Exception as e:
+        logger.exception("Nutrition API failed")
+        return f"Nutrition lookup error: {e}"
+
+def city_info(query: str = "Mumbai") -> str:
+    """Get city information via API Ninjas."""
+    key = (config.API_NINJAS_KEY or "").strip()
+    if not key:
+        return "API_NINJAS_KEY not configured."
+    try:
+        resp = requests.get(f"https://api.api-ninjas.com/v1/city?name={requests.utils.quote(query)}",
+                          headers={"X-Api-Key": key}, timeout=15)
+        resp.raise_for_status()
+        items = resp.json()
+        if not items:
+            return "City not found."
+        c = items[0]
+        return (f"{c.get('name')}\nCountry: {c.get('country')}\nPopulation: {c.get('population')}\n"
+                f"Lat/Lon: {c.get('latitude')}, {c.get('longitude')}\nArea: {c.get('area', 'n/a')} km²")
+    except Exception as e:
+        logger.exception("City API failed")
+        return f"City lookup error: {e}"
+
+def random_fact() -> str:
+    """Get a random fact from API Ninjas."""
+    key = (config.API_NINJAS_KEY or "").strip()
+    if not key:
+        return "API_NINJAS_KEY not configured."
+    try:
+        resp = requests.get("https://api.api-ninjas.com/v1/facts?limit=1",
+                          headers={"X-Api-Key": key}, timeout=15)
+        resp.raise_for_status()
+        items = resp.json()
+        return items[0].get("fact", "No fact found.") if items else "No fact found."
+    except Exception as e:
+        logger.exception("Facts API failed")
+        return f"Fact lookup error: {e}"
+
+def ip_lookup(address: str = "") -> str:
+    """IP geolocation via API Ninjas."""
+    key = (config.API_NINJAS_KEY or "").strip()
+    if not key:
+        return "API_NINJAS_KEY not configured."
+    try:
+        url = "https://api.api-ninjas.com/v1/iplookup"
+        if address.strip():
+            url += f"?address={requests.utils.quote(address.strip())}"
+        resp = requests.get(url, headers={"X-Api-Key": key}, timeout=15)
+        resp.raise_for_status()
+        d = resp.json()
+        return (f"IP: {d.get('ip', address or 'auto')}\nCity: {d.get('city', 'n/a')}\n"
+                f"Region: {d.get('region', 'n/a')}\nCountry: {d.get('country', 'n/a')}\n"
+                f"ISP: {d.get('isp', 'n/a')}\nLat/Lon: {d.get('lat', '?')}, {d.get('lon', '?')}")
+    except Exception as e:
+        logger.exception("IP lookup failed")
+        return f"IP lookup error: {e}"
+
+def sentiment_analysis(text: str = "I love JARVIS!") -> str:
+    """Sentiment analysis via API Ninjas."""
+    key = (config.API_NINJAS_KEY or "").strip()
+    if not key:
+        return "API_NINJAS_KEY not configured."
+    try:
+        resp = requests.post("https://api.api-ninjas.com/v1/sentiment",
+                           json={"text": text},
+                           headers={"X-Api-Key": key, "Content-Type": "application/json"},
+                           timeout=15)
+        resp.raise_for_status()
+        d = resp.json()
+        return (f"Sentiment analysis\nSentiment: {d.get('sentiment')}\nScore: {d.get('score', 0)}\n"
+                f"Mixed: {d.get('mixed', 0)}\nPositive: {d.get('positive', 0)}\n"
+                f"Negative: {d.get('negative', 0)}\nNeutral: {d.get('neutral', 0)}")
+    except Exception as e:
+        logger.exception("Sentiment analysis failed")
+        return f"Sentiment analysis error: {e}"
+
+def email_validate(email: str = "test@example.com") -> str:
+    """Email validation via API Ninjas."""
+    key = (config.API_NINJAS_KEY or "").strip()
+    if not key:
+        return "API_NINJAS_KEY not configured."
+    try:
+        resp = requests.get(f"https://api.api-ninjas.com/v1/email?email={requests.utils.quote(email)}",
+                          headers={"X-Api-Key": key}, timeout=15)
+        resp.raise_for_status()
+        d = resp.json()
+        return (f"Email validation\nAddress: {d.get('email')}\nValid format: {d.get('is_valid', False)}\n"
+                f"Deliverable: {d.get('deliverability', False)}\n"
+                f"Disposable: {d.get('is_disposable_email', False)}\n"
+                f"Role-based: {d.get('is_role_email', False)}")
+    except Exception as e:
+        logger.exception("Email validation failed")
+        return f"Email validation error: {e}"
+
+def exercises(query: str = "biceps") -> str:
+    """Get exercises for a muscle group via API Ninjas."""
+    key = (config.API_NINJAS_KEY or "").strip()
+    if not key:
+        return "API_NINJAS_KEY not configured."
+    try:
+        resp = requests.get(f"https://api.api-ninjas.com/v1/exercises?muscle={requests.utils.quote(query)}",
+                          headers={"X-Api-Key": key}, timeout=15)
+        resp.raise_for_status()
+        items = resp.json()
+        out = ["Exercises"]
+        for i, item in enumerate(items[:5]):
+            out.append(f"{i+1}. {item.get('name')}\n   Type: {item.get('type')} | Muscle: {item.get('muscle')} | "
+                       f"Difficulty: {item.get('difficulty')}\n   {item.get('instructions', '')}")
+        return "\n".join(out)
+    except Exception as e:
+        logger.exception("Exercises API failed")
+        return f"Exercise lookup error: {e}"
+
+# ──────────────────────────────────────────────
+# Calendarific API tool (global holidays)
+# ──────────────────────────────────────────────
+def global_holidays(country_code: str = "IN") -> str:
+    """Get global holidays via Calendarific API."""
+    key = (config.CALENDARIFIC_API_KEY or "").strip()
+    if not key:
+        return "CALENDARIFIC_API_KEY not configured."
+    try:
+        parts = country_code.split("|", 1)
+        code = parts[0].strip().upper() or "IN"
+        htype = parts[1].strip() if len(parts) > 1 else ""
+        year = datetime.now().year
+        url = f"https://calendarific.com/api/v2/holidays?api_key={key}&country={code}&year={year}"
+        if htype:
+            url += f"&type={requests.utils.quote(htype)}"
+        resp = requests.get(url, timeout=15)
+        resp.raise_for_status()
+        holidays = resp.json().get("response", {}).get("holidays", [])
+        label = f"Holidays {code} {year}"
+        if htype:
+            label += f" ({htype})"
+        out = [label]
+        for i, h in enumerate(holidays[:10]):
+            iso = h.get("date", {}).get("iso", "")
+            types = h.get("type", [])
+            tstr = f" ({types[0]})" if types else ""
+            out.append(f"{i+1}. {iso} - {h.get('name')}{tstr}")
+        return "\n".join(out)
+    except Exception as e:
+        logger.exception("Calendarific failed")
+        return f"Global holidays error: {e}"
+
 TOOL_REGISTRY = {
     "web_search": web_search,
     "plot_chart": plot_chart,
@@ -944,6 +1347,27 @@ TOOL_REGISTRY = {
     "roll_dice": roll_dice,
     "get_weather": get_weather,
     "timer": timer,
+    "nasa_apod": nasa_apod,
+    "nasa_mars_rover": nasa_mars_rover,
+    "nasa_earth": nasa_earth,
+    "nasa_iss": nasa_iss,
+    "nasa_library": nasa_library,
+    "nasa_space_data": nasa_space_data,
+    "finnhub_stock_news": finnhub_stock_news,
+    "finnhub_quote": finnhub_quote,
+    "finnhub_company": finnhub_company,
+    "finnhub_financials": finnhub_financials,
+    "finnhub_forex": finnhub_forex,
+    "finnhub_crypto": finnhub_crypto,
+    "finnhub_market_news": finnhub_market_news,
+    "nutrition_info": nutrition_info,
+    "city_info": city_info,
+    "random_fact": random_fact,
+    "ip_lookup": ip_lookup,
+    "sentiment_analysis": sentiment_analysis,
+    "email_validate": email_validate,
+    "exercises": exercises,
+    "global_holidays": global_holidays,
 }
 
 # Merge academic tools

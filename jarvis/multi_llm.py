@@ -74,10 +74,10 @@ class GroqProvider(BaseLLMProvider):
     def _init_client(self) -> None:
         """Initialize Groq client."""
         try:
-            from groq import Groq
+            from jarvis.llm import create_groq_client
             api_key = APIKeyManager.get_key("GROQ_API_KEY")
             if api_key:
-                self.client = Groq(api_key=api_key)
+                self.client = create_groq_client(api_key)
         except Exception as e:
             logger.error(f"Failed to init Groq: {e}")
     

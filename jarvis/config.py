@@ -41,6 +41,26 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 # =============================================================================
+# NASA API
+# =============================================================================
+NASA_API_KEY = os.getenv("NASA_API_KEY", "")
+
+# =============================================================================
+# FINNHUB API
+# =============================================================================
+FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")
+
+# =============================================================================
+# API NINJAS
+# =============================================================================
+API_NINJAS_KEY = os.getenv("API_NINJAS_KEY", "")
+
+# =============================================================================
+# CALENDARIFIC API
+# =============================================================================
+CALENDARIFIC_API_KEY = os.getenv("CALENDARIFIC_API_KEY", "")
+
+# =============================================================================
 # TTS/STT CONFIGURATION
 # =============================================================================
 TTS_ENGINE = os.getenv("TTS_ENGINE", "pyttsx3")  # pyttsx3, edge-tts
@@ -62,6 +82,17 @@ USER_PREFERENCES_FILE = DATA_DIR / "preferences.json"
 # =============================================================================
 DEBUG_MODE = os.getenv("DEBUG", "false").lower() == "true"
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+
+# Dashboard thresholds
+CPU_ALERT_THRESHOLD = 80.0
+RAM_ALERT_THRESHOLD = 85.0
+DISK_ALERT_THRESHOLD = 90.0
+TEMP_ALERT_THRESHOLD = 75.0
+
+# Memory settings
+MAX_SHORT_TERM_MEMORY = 50
+MAX_LONG_TERM_MEMORY = 1000
+MEMORY_SIMILARITY_THRESHOLD = 0.7
 
 # =============================================================================
 # FEATURE FLAGS

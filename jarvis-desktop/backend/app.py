@@ -44,9 +44,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # In-memory log buffer for frontend display (terminal-style logs)
-MAX_LOG_BUFFER = 1000
+MAX_LOG_BUFFER = 200  # Reduced for faster loading
 log_buffer: list[Dict[str, Any]] = []
 log_subscribers: set = set()  # WebSocket clients subscribed to logs
+pending_log_broadcasts: list[Dict[str, Any]] = []  # Queue for async broadcasting
 
 class FrontendLogHandler(logging.Handler):
     """Custom handler to capture logs for frontend display"""
@@ -75,8 +76,8 @@ class FrontendLogHandler(logging.Handler):
             if len(log_buffer) > MAX_LOG_BUFFER:
                 log_buffer.pop(0)
             
-            # Broadcast to subscribers
-            asyncio.create_task(broadcast_log(log_entry))
+            # Queue for broadcasting (will be processed by async task)
+            pending_log_broadcasts.append(log_entry)
         except Exception:
             pass
 
@@ -958,12 +959,25 @@ class JarvisCore:
         if not self.initialized:
             await self.initialize()
         
-        # If LLM is not available, return helpful error immediately
+        # If LLM is not available, try to re-initialize
+        if not self.llm or not self.llm.client:
+            logger.warning("LLM not available, attempting to re-initialize...")
+            try:
+                from jarvis.llm import JarvisLLM
+                self.llm = JarvisLLM()
+                if self.llm.client:
+                    logger.info("✅ LLM re-initialized successfully!")
+                else:
+                    logger.error("❌ LLM re-initialization failed - no working client")
+            except Exception as e:
+                logger.error(f"❌ LLM re-initialization error: {e}")
+        
+        # If still not available, return error
         if not self.llm or not self.llm.client:
             return {
-                "response": "⚠️ **AI Not Available**\n\nThe language model failed to initialize. Please check:\n• GROQ_API_KEY in .env file is valid\n• Internet connection is active\n• Restart the backend after fixing API keys",
+                "response": "⚠️ **AI Not Available**\n\nThe language model failed to initialize. Please check:\n• GROQ_API_KEY in .env file is valid\n• Internet connection is active\n• Backend logs for specific error details",
                 "actions": [],
-                "suggestions": ["check system status", "restart backend"]
+                "suggestions": ["check system status", "show logs"]
             }
             
         q = message.strip().lower()
@@ -1480,6 +1494,17 @@ class JarvisCore:
                         memory_context += "\nUser preferences:\n"
                         for key, value in list(prefs.items())[:5]:
                             memory_context += f"- {key}: {value}\n"
+                    
+                    # Search notes for relevant information based on keywords in message
+                    keywords = [w for w in message.lower().split() if len(w) > 3]
+                    for keyword in keywords[:3]:
+                        notes = memory.search_notes(keyword)
+                        if notes:
+                            memory_context += f"\nRelevant information about '{keyword}':\n"
+                            for note in notes[:2]:
+                                memory_context += f"- {note.get('title', '')}: {note.get('content', '')[:100]}...\n"
+                            break  # Only add notes for first matching keyword
+                            
                 except Exception as e:
                     logger.debug(f"Could not load memory context: {e}")
                 
@@ -1488,7 +1513,8 @@ class JarvisCore:
                 if memory_context:
                     enhanced_message = f"{memory_context}\n\nCurrent message: {message}"
                 
-                llm_response = self.llm.chat(enhanced_message)
+                # Use smaller max_tokens for faster, cheaper responses (256 tokens = ~200 words)
+                llm_response = self.llm.chat(enhanced_message, max_tokens=256)
                 
                 # New format: LLM returns dict with text and actions
                 if isinstance(llm_response, dict):
@@ -2287,8 +2313,23 @@ class JarvisCore:
 # Global instance
 jarvis_core = JarvisCore()
 
+async def process_log_broadcasts():
+    """Background task to broadcast queued logs"""
+    while True:
+        try:
+            # Process any pending log broadcasts
+            while pending_log_broadcasts:
+                log_entry = pending_log_broadcasts.pop(0)
+                await broadcast_log(log_entry)
+            await asyncio.sleep(0.1)  # Small delay to prevent busy-waiting
+        except Exception:
+            await asyncio.sleep(1)
+
 @app.on_event("startup")
 async def startup():
+    # Start background tasks
+    asyncio.create_task(process_log_broadcasts())
+    asyncio.create_task(broadcast_system_stats())
     await jarvis_core.initialize()
 
 @app.post("/api/chat")
@@ -2483,6 +2524,52 @@ async def test_memory():
         }
     except Exception as e:
         logger.error(f"Memory test error: {e}")
+        return {"status": "error", "error": str(e)}
+
+@app.post("/api/memory/reset")
+async def reset_memory():
+    """Reset/Clear all JARVIS memory - USE WITH CAUTION!"""
+    try:
+        from jarvis.memory import memory
+        import os
+        
+        # Close any open connections
+        db_path = memory.db_path
+        
+        # Delete the database file
+        if os.path.exists(db_path):
+            os.remove(db_path)
+            logger.info(f"🗑️ Memory database deleted: {db_path}")
+        
+        # Re-initialize fresh database
+        memory.__init__()
+        
+        return {
+            "status": "success",
+            "message": "🗑️ All memory cleared! Starting fresh.",
+            "db_path": str(db_path)
+        }
+    except Exception as e:
+        logger.error(f"Memory reset error: {e}")
+        return {"status": "error", "error": str(e)}
+
+@app.get("/api/memory/export")
+async def export_memory():
+    """Export all memory as JSON/text for viewing"""
+    try:
+        from jarvis.memory import memory
+        
+        data = {
+            "conversations": memory.get_recent_conversations(limit=100),
+            "preferences": memory.get_all_preferences(),
+            "todos": memory.get_todos(),
+            "notes": memory.search_notes(""),  # Get all notes
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        return data
+    except Exception as e:
+        logger.error(f"Memory export error: {e}")
         return {"status": "error", "error": str(e)}
 
 @app.post("/api/documents/upload")
@@ -2827,11 +2914,6 @@ async def broadcast_shopping_progress(query: str, status: str, platform: str = "
     
     connected_clients.difference_update(disconnected)
 
-@app.on_event("startup")
-async def start_broadcast():
-    """Start the broadcast task"""
-    asyncio.create_task(broadcast_system_stats())
-
 @app.post("/api/execute")
 async def execute_command(request: dict):
     """Execute system commands for PC Control"""
@@ -2894,15 +2976,17 @@ async def websocket_logs_endpoint(websocket: WebSocket):
     await websocket.accept()
     log_subscribers.add(websocket)
     
-    # Send existing logs from buffer
-    for log in log_buffer[-200:]:  # Last 200 logs
+    # Send recent logs (last 50 only for faster startup)
+    recent_logs = log_buffer[-50:]
+    if recent_logs:
         try:
             await websocket.send_json({
-                "type": "log",
-                "data": log
+                "type": "batch",
+                "logs": recent_logs
             })
         except:
-            break
+            log_subscribers.discard(websocket)
+            return
     
     try:
         while True:

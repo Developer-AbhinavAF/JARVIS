@@ -284,39 +284,24 @@ function App() {
 
   return (
     <div className="h-screen w-screen flex overflow-hidden font-sans text-jarvis-text relative">
-      {/* Background Video - Optimized */}
+      {/* Background Video - Ultra Light */}
       <video
         autoPlay
         loop
         muted
         playsInline
-        preload="auto"
+        preload="metadata"
         disablePictureInPicture
         disableRemotePlayback
-        className="absolute inset-0 w-full h-full object-cover z-0 will-change-transform"
-        style={{ opacity: 0.4 }}
+        decoding="async"
+        className="absolute inset-0 w-full h-full object-cover z-0"
+        style={{ opacity: 0.25, transform: 'translateZ(0)' }}
       >
         <source src="/src/background/bcg.webm" type="video/webm" />
       </video>
 
-      {/* Lightweight CSS Particles - Reduced count */}
-      <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
-        {[...Array(6)].map((_, i) => (
-          <div
-            key={i}
-            className="absolute w-1 h-1 bg-jarvis-accentPink/20 rounded-full animate-float"
-            style={{
-              left: `${15 + i * 15}%`,
-              bottom: '-10px',
-              animationDelay: `${i * 2}s`,
-              animationDuration: `${12 + i * 2}s`,
-            }}
-          />
-        ))}
-      </div>
-
-      {/* Static Gradient Overlay - Better Performance */}
-      <div className="absolute inset-0 z-0 bg-gradient-to-br from-black/50 via-black/30 to-black/50 pointer-events-none" />
+      {/* Simple Static Overlay - No Animations */}
+      <div className="absolute inset-0 z-0 bg-black/40 pointer-events-none" />
 
       <AnimatePresence mode="wait">
         {isLoading ? (

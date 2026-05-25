@@ -19,6 +19,34 @@ from jarvis import config
 logger = logging.getLogger(__name__)
 
 
+def create_groq_client(api_key: str) -> Groq:
+    """Create a Groq client across older groq/newer httpx installs."""
+    try:
+        return Groq(api_key=api_key)
+    except TypeError as exc:
+        error_text = str(exc).lower()
+        if "unexpected keyword argument 'proxies'" not in error_text:
+            raise
+
+        logger.warning(
+            "Detected Groq/httpx proxy compatibility issue; retrying with "
+            "an explicit HTTP client. Reinstall requirements to make this permanent."
+        )
+
+        try:
+            import httpx
+        except ImportError as httpx_exc:
+            raise RuntimeError(
+                "Groq needs a compatible httpx install. Install httpx==0.27.0 "
+                "or upgrade the groq package."
+            ) from httpx_exc
+
+        return Groq(
+            api_key=api_key,
+            http_client=httpx.Client(timeout=60.0, follow_redirects=True),
+        )
+
+
 class JarvisLLM:
     """JARVIS LLM interface with fallback support."""
 
@@ -31,40 +59,61 @@ class JarvisLLM:
         self._initialize_client()
 
     def _initialize_client(self):
-        """Initialize Groq client with current API key and test it."""
+        """Initialize Groq client with current API key."""
+        logger.info(f"🔑 GROQ_API_KEYS found: {len(self.api_keys)} keys")
+
         if not self.api_keys:
             logger.error("❌ No Groq API keys configured!")
-            logger.error("   Add GROQ_API_KEY, GROQ_API_KEY2, etc to .env file")
+            logger.error("   Looking for: GROQ_API_KEY, GROQ_API_KEY2, GROQ_API_KEY3, GROQ_API_KEY4")
+            logger.error("   in .env file")
             return
 
-        logger.info(f"🔑 Testing {len(self.api_keys)} API key(s)...")
+        for i, key in enumerate(self.api_keys):
+            if not key:
+                logger.warning(f"Key {i+1} is empty, skipping")
+                continue
+            if key in self.failed_keys:
+                logger.warning(f"Key {i+1} already failed, skipping")
+                continue
 
-        while self.current_key_index < len(self.api_keys):
-            key = self.api_keys[self.current_key_index]
-            if key and key not in self.failed_keys:
+            try:
+                # Mask key for logging
+                masked_key = key[:10] + "..." + key[-4:] if len(key) > 14 else "***"
+                logger.info(f"🧪 Initializing Groq client with key {i+1}: {masked_key}")
+
+                self.client = create_groq_client(key)
+                self.current_key_index = i
+
+                # Try a test call
                 try:
-                    self.client = Groq(api_key=key)
-                    # Test the key with a simple API call
-                    logger.info(f"🧪 Testing key {self.current_key_index + 1}...")
                     test_response = self.client.chat.completions.create(
                         model=self.model,
                         messages=[{"role": "user", "content": "Hi"}],
                         max_tokens=5
                     )
-                    logger.info(f"✅ Groq client initialized with key {self.current_key_index + 1}")
+                    logger.info(f"✅ Key {i+1} works! Groq client ready.")
                     return
-                except Exception as e:
-                    error_str = str(e)
-                    logger.warning(f"❌ Key {self.current_key_index + 1} failed: {error_str[:100]}")
-                    if "auth" in error_str.lower() or "401" in error_str:
-                        logger.warning("   → Authentication error - key may be invalid or expired")
-                    elif "rate" in error_str.lower() or "429" in error_str:
-                        logger.warning("   → Rate limit hit - will try other keys")
-                    self.failed_keys.add(key)
-            self.current_key_index += 1
+                except Exception as test_e:
+                    # Test call failed but client created - might work on retry
+                    error_str = str(test_e).lower()
+                    if "rate" in error_str or "429" in error_str:
+                        logger.warning(f"⚠️ Key {i+1} hit rate limit on test, but client created")
+                        return  # Keep this client, will retry on actual call
+                    elif "auth" in error_str or "401" in error_str:
+                        logger.error(f"❌ Key {i+1} authentication failed: {test_e}")
+                        self.failed_keys.add(key)
+                        self.client = None
+                    else:
+                        logger.warning(f"⚠️ Key {i+1} test call failed: {test_e}")
+                        # Keep the client anyway, might be transient
+                        return
+
+            except Exception as e:
+                logger.error(f"❌ Key {i+1} initialization failed: {e}")
+                self.failed_keys.add(key)
+                self.client = None
 
         logger.error("❌ All Groq API keys failed to initialize!")
-        logger.error("   Please check your .env file and ensure API keys are valid")
 
     def _rotate_api_key(self):
         """Rotate to next available API key."""
@@ -75,7 +124,7 @@ class JarvisLLM:
             key = self.api_keys[self.current_key_index]
             if key and key not in self.failed_keys:
                 try:
-                    self.client = Groq(api_key=key)
+                    self.client = create_groq_client(key)
                     logger.info(f"🔄 Rotated to API key {self.current_key_index + 1}")
                     return True
                 except Exception as e:
@@ -179,19 +228,39 @@ class JarvisLLM:
 
         raise Exception("All LLM providers failed")
 
-    def chat(self, message: str, context: Optional[List[Dict]] = None) -> Union[str, Dict]:
-        """Main chat interface with JARVIS."""
+    def chat(self, message: str, context: Optional[List[Dict]] = None, max_tokens: int = 512) -> Union[str, Dict]:
+        """Main chat interface with JARVIS - Fast & Concise."""
         try:
+            # JARVIS personality - concise and helpful
+            system_prompt = """You are JARVIS, Tony Stark's AI assistant. Be concise, helpful, proactive.
+
+Available tool commands (colon syntax):
+- NASA: nasa-apod, nasa-mars:[sol], nasa-earth:[lat,lon], nasa-iss, nasa-space, nasa-library:[query]
+- Finnhub: finnhub-quote:[SYM], finnhub-news:[SYM], finnhub-company:[SYM], finnhub-financials:[SYM], finnhub-forex:[PAIR], finnhub-crypto:[PAIR]
+- Ninjas: nutrition:[food], city:[name], fact, exercises:[muscle], ip-lookup:[ip], sentiment:[text], email-validate:[email]
+- Finance: crypto:[coin], stock:[SYM], currency:[FROM TO AMT]
+- Media: youtube:[query], movies:[title], games:[game], recipe:[ingredient], podcast:[topic]
+- Data: weather:[city], forecast:[city], news:[topic], wiki:[topic], country:[name], holidays:[code], global-holidays:[code]
+- Fun: joke, quote, advice, number-fact:[n], useless-fact, riddle, coin, dice, 8ball:[question]
+- System: system, ping:[host], smart-search:[query], daily:[city], translate:[target|text]
+- Utility: image:[prompt], qr:[data], web:[query], reddit:[subreddit], github-user:[user], github-repo:[repo], books:[query], anime:[query]
+
+Help the user decide which command fits their need. Keep responses under 100 words."""
+
             messages = context if context else []
             if not messages:
                 messages = [
-                    {"role": "system", "content": "You are JARVIS, an intelligent AI assistant."},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": message}
                 ]
             else:
+                # Ensure system prompt is first
+                if not any(m.get("role") == "system" for m in messages):
+                    messages.insert(0, {"role": "system", "content": system_prompt})
                 messages.append({"role": "user", "content": message})
 
-            response_text = self._call_groq(messages)
+            # Use smaller max_tokens for faster, cheaper responses
+            response_text = self._call_groq(messages, max_tokens=max_tokens)
 
             # Check if response contains actions/commands
             if "{" in response_text and "}" in response_text:

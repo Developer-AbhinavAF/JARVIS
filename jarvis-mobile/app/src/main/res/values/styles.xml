@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/jarvis_bg</item>
+        <item name="android:statusBarColor">@color/jarvis_bg</item>
+        <item name="android:windowBackground">@color/jarvis_bg</item>
+        <item name="android:textColorPrimary">@color/jarvis_text</item>
+        <item name="android:textColorSecondary">@color/jarvis_text_secondary</item>
+        <item name="android:colorBackground">@color/jarvis_bg</item>
+    </style>
+</resources>
