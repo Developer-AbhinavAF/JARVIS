@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Enforce HTTPS for all API domains -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">api.openrouter.ai</domain>
+        <domain includeSubdomains="true">api.groq.com</domain>
+        <domain includeSubdomains="true">generativelanguage.googleapis.com</domain>
+        <domain includeSubdomains="true">api.openweathermap.org</domain>
+        <domain includeSubdomains="true">newsapi.org</domain>
+        <domain includeSubdomains="true">www.alphavantage.co</domain>
+        <domain includeSubdomains="true">www.googleapis.com</domain>
+        <domain includeSubdomains="true">serpapi.com</domain>
+        <domain includeSubdomains="true">api.tavily.com</domain>
+        <domain includeSubdomains="true">api.resend.com</domain>
+        <domain includeSubdomains="true">api.themoviedb.org</domain>
+        <domain includeSubdomains="true">api.nasa.gov</domain>
+        <domain includeSubdomains="true">finnhub.io</domain>
+        <domain includeSubdomains="true">api.api-ninjas.com</domain>
+        <domain includeSubdomains="true">calendarific.com</domain>
+        <domain includeSubdomains="true">github.com</domain>
+        <domain includeSubdomains="true">reddit.com</domain>
+        <domain includeSubdomains="true">en.wikipedia.org</domain>
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </domain-config>
+
+    <!-- Localhost only for development/debug (not used in release) -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+    </domain-config>
+</network-security-config>
