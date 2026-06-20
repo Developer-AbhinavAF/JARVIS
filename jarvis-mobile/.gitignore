@@ -1,9 +1,0 @@
-.gradle/
-build/
-app/build/
-local.properties
-.env
-keystore.properties
-*.jks
-*.apk
-*.aab
