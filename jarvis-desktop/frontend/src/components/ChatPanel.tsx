@@ -1,21 +1,173 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Mic, Copy, Volume2, Trash2, ExternalLink, Terminal, AlertCircle, Paperclip, X, FileText, Maximize2, Minimize2 } from 'lucide-react';
+import {
+  Send,
+  Mic,
+  Copy,
+  Volume2,
+  Trash2,
+  ExternalLink,
+  Terminal,
+  AlertCircle,
+  Paperclip,
+  X,
+  FileText,
+  Maximize2,
+  Minimize2,
+  Bold,
+  Italic,
+  List,
+  ListOrdered,
+  ListChecks,
+  Code2,
+  Quote,
+} from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { useChat } from '@/hooks/useApi';
 import type { Message, MessageAction, MessageActions } from '@/types';
 import { EnhancedMarkdown } from './EnhancedMarkdown';
 
+const ACTION_LABELS: Record<string, string> = {
+  open_app: '🚀 Opened App',
+  close_app: '❌ Closed App',
+  open_url: '🌐 Opened Link',
+  search: '🔍 Search Started',
+  web_search: '🔍 Web Search',
+  screenshot: '📸 Screenshot',
+  add_todo: '✅ Todo Added',
+  add_note: '📝 Note Saved',
+  clear_memory: '🧠 Memory Cleared',
+  list_apps: '📋 Running Apps',
+  show_todos: '🗒️ Todo List',
+  show_notes: '📚 Notes',
+  help: '❓ Help',
+  system_status: '📊 System Status',
+  daily_briefing: '📅 Briefing',
+  calculator: '🧮 Calculation',
+  weather: '🌤️ Weather',
+  joke: '😄 Joke',
+  quote: '💬 Quote',
+  time: '🕒 Time',
+  date: '📅 Date',
+  network_status: '📶 Network Status',
+  process_info: '⚙️ Process Info',
+  random_fact: '🤔 Random Fact',
+  read_document: '📄 Document Read',
+  file_analyzed: '📄 File Analyzed',
+  volume: '🔊 Volume',
+  brightness: '☀️ Brightness',
+  night_mode: '🌙 Night Mode',
+  shutdown: '⚠️ Shutdown',
+  cancel_shutdown: '✅ Shutdown Cancelled',
+  restart: '🔄 Restart',
+  sleep: '💤 Sleep',
+  lock: '🔒 Screen Locked',
+  wifi_toggle: '📶 Wi‑Fi Toggled',
+  bluetooth_toggle: '🔵 Bluetooth',
+  play_media: '▶️ Media Play',
+  pause_media: '⏸️ Media Pause',
+  next_media: '⏭️ Next Track',
+  previous_media: '⏮️ Previous Track',
+  stop_media: '⏹️ Media Stop',
+  empty_recycle: '🗑️ Recycle Bin Emptied',
+  task_manager: '📊 Task Manager',
+  terminal: '💻 Terminal',
+};
+
+function getActionLabel(action: MessageAction): string {
+  if (action.type === 'volume' && action.action) {
+    return `🔊 Volume ${action.action}`;
+  }
+
+  if (action.type === 'brightness' && action.action) {
+    return `☀️ Brightness ${action.action}`;
+  }
+
+  if (action.type === 'calculator' && action.result !== undefined) {
+    return `🧮 Result ${action.result}`;
+  }
+
+  if (action.type === 'read_document' && action.file_name) {
+    return `📄 ${action.file_name}`;
+  }
+
+  if (action.type === 'file_analyzed' && action.filename) {
+    return `📄 ${action.filename}`;
+  }
+
+  if (action.type === 'media' && action.action) {
+    return `🎵 Media ${action.action.replace(/_/g, ' ')}`;
+  }
+
+  return ACTION_LABELS[action.type] ?? `⚡ ${action.type.replace(/_/g, ' ')}`;
+}
+
+function executeFrontendAction(action: MessageAction) {
+  switch (action.type) {
+    case 'open_url':
+      if (action.url) {
+        window.open(action.url, '_blank', 'noopener,noreferrer');
+      }
+      break;
+    case 'web_search':
+    case 'search':
+      if (action.url) {
+        window.open(action.url, '_blank', 'noopener,noreferrer');
+      }
+      break;
+    case 'screenshot':
+    case 'add_todo':
+    case 'add_note':
+    case 'clear_memory':
+    case 'list_apps':
+    case 'show_todos':
+    case 'show_notes':
+    case 'help':
+    case 'system_status':
+    case 'daily_briefing':
+    case 'calculator':
+    case 'weather':
+    case 'joke':
+    case 'quote':
+    case 'time':
+    case 'date':
+    case 'network_status':
+    case 'process_info':
+    case 'random_fact':
+    case 'read_document':
+    case 'file_analyzed':
+    case 'volume':
+    case 'brightness':
+    case 'night_mode':
+    case 'shutdown':
+    case 'cancel_shutdown':
+    case 'restart':
+    case 'sleep':
+    case 'lock':
+    case 'wifi_toggle':
+    case 'bluetooth_toggle':
+    case 'play_media':
+    case 'pause_media':
+    case 'next_media':
+    case 'previous_media':
+    case 'stop_media':
+    case 'media':
+    case 'empty_recycle':
+    case 'task_manager':
+    case 'terminal':
+    case 'open_app':
+    case 'close_app':
+      console.log('JARVIS action:', action);
+      break;
+    default:
+      console.log('Unhandled JARVIS action:', action);
+      break;
+  }
+}
+
 interface ChatResponse {
   response: string;
-  actions?: Array<{
-    type: string;
-    app?: string;
-    path?: string;
-    url?: string;
-    query?: string;
-    data?: any;
-  }>;
+  actions?: MessageAction[];
   suggestions?: string[];
 }
 
@@ -24,9 +176,9 @@ export default function ChatPanel() {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<{ name: string; type: string; data: string } | null>(null);
-  const { sendMessage, loading } = useChat();
+  const { loading } = useChat();
   const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const typingIntervalRef = useRef<number | null>(null);
 
@@ -144,7 +296,7 @@ export default function ChatPanel() {
       clearMessages();
       addMessage({
         role: 'assistant',
-        content: '🧹 **Chat cleared!** All previous messages have been removed.\n\nHow can I help you?',
+        content: '**Chat cleared.**\n\nHow can I help you?',
       });
       return;
     }
@@ -158,104 +310,138 @@ export default function ChatPanel() {
     setIsTyping(true);
 
     try {
-      // Send to API with file if attached
-      let response: ChatResponse;
       if (uploadedFile) {
-        // Send with file
         const formData = new FormData();
         formData.append('message', userMessage || `Analyze this ${uploadedFile.type.includes('image') ? 'image' : 'file'}`);
         formData.append('session_id', 'default');
         formData.append('file_name', uploadedFile.name);
         formData.append('file_type', uploadedFile.type);
         formData.append('file_data', uploadedFile.data);
-        
+        const res = await fetch('http://localhost:8001/api/chat', { method: 'POST', body: formData });
+        const response: ChatResponse = await res.json();
+        setUploadedFile(null);
+        if (response.actions && response.actions.length > 0) response.actions.forEach(executeFrontendAction);
+        if (response.suggestions) setSuggestions(response.suggestions);
+        addMessage({ role: 'assistant', content: '', actions: { copy: true, speak: true, delete: true } as MessageActions, actionButtons: response.actions });
+        const fullResponse = response.response;
+        let currentIndex = 0;
+        typingIntervalRef.current = window.setInterval(() => {
+          if (currentIndex <= fullResponse.length) {
+            const typedContent = fullResponse.slice(0, currentIndex);
+            const { messages } = useStore.getState();
+            if (messages.length > 0) {
+              const lastIndex = messages.length - 1;
+              useStore.setState({ messages: messages.map((m, i) => i === lastIndex ? { ...m, content: typedContent } : m) });
+            }
+            currentIndex += 3;
+            if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+          } else { clearTypingInterval(); }
+        }, 15);
+      } else {
+        // Streaming text message with smooth typing effect
+        addMessage({ role: 'assistant', content: '', actions: { copy: true, speak: true, delete: true } as MessageActions });
         const res = await fetch('http://localhost:8001/api/chat', {
           method: 'POST',
-          body: formData,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: userMessage, session_id: 'default', stream: true }),
         });
-        response = await res.json();
-        setUploadedFile(null);
-      } else {
-        // Normal text message
-        response = await sendMessage(userMessage);
-      }
-      
-      // Execute any actions returned by JARVIS
-      if (response.actions && response.actions.length > 0) {
-        response.actions.forEach((action) => {
-          switch (action.type) {
-            case 'open_url':
-              if (action.url) {
-                window.open(action.url, '_blank');
+        if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '', fullResponse = '', actions: MessageAction[] = [], displayIndex = 0, streamDone = false;
+        // Typing effect reveals characters gradually as fullResponse grows
+        clearTypingInterval();
+        typingIntervalRef.current = window.setInterval(() => {
+          if (displayIndex < fullResponse.length) {
+            displayIndex = Math.min(displayIndex + 3, fullResponse.length);
+            const { messages } = useStore.getState();
+            if (messages.length > 0) {
+              const lastIndex = messages.length - 1;
+              useStore.setState({ messages: messages.map((m, i) => i === lastIndex ? { ...m, content: fullResponse.slice(0, displayIndex) } : m) });
+            }
+            if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+          } else if (streamDone) {
+            clearTypingInterval();
+          }
+        }, 20);
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.token) fullResponse += data.token;
+              if (data.done) {
+                fullResponse = data.response || fullResponse;
+                actions = data.actions || [];
+                if (data.suggestions) setSuggestions(data.suggestions);
               }
-              break;
-            case 'screenshot':
-              console.log('Screenshot saved:', action.path);
-              break;
-            case 'add_todo':
-            case 'add_note':
-              console.log('Memory saved:', action);
-              break;
+            } catch { /* skip malformed SSE */ }
           }
-        });
-      }
-      
-      // Update suggestions
-      if (response.suggestions) {
-        setSuggestions(response.suggestions);
-      }
-      
-      // Add AI response with typing effect
-      addMessage({ 
-        role: 'assistant', 
-        content: '',
-        actions: { copy: true, speak: true, delete: true } as MessageActions,
-        actionButtons: response.actions 
-      });
-      
-      // Typing effect - type character by character
-      const fullResponse = response.response;
-      let currentIndex = 0;
-      typingIntervalRef.current = window.setInterval(() => {
-        if (currentIndex <= fullResponse.length) {
-          // Update message content progressively
-          const typedContent = fullResponse.slice(0, currentIndex);
-          // Update the last message with typed content
-          const { messages } = useStore.getState();
-          if (messages.length > 0) {
-            const lastIndex = messages.length - 1;
-            useStore.setState({
-              messages: messages.map((m, i) => 
-                i === lastIndex 
-                  ? { ...m, content: typedContent }
-                  : m
-              )
-            });
-          }
-          currentIndex += 3; // Type 3 characters at a time for smooth effect
-          
-          // Auto scroll while typing
-          if (scrollRef.current) {
-            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-          }
-        } else {
-          clearTypingInterval();
         }
-      }, 15); // 15ms per batch for smooth typing
-      
+        streamDone = true;
+        // Ensure final text is shown even if typing interval was already caught up
+        const { messages } = useStore.getState();
+        if (messages.length > 0) {
+          const lastIndex = messages.length - 1;
+          useStore.setState({ messages: messages.map((m, i) => i === lastIndex ? { ...m, content: fullResponse, actionButtons: actions } : m) });
+        }
+        if (actions.length > 0) actions.forEach(executeFrontendAction);
+      }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Failed to connect to JARVIS AI';
       setError(errorMsg);
-      addMessage({
-        role: 'assistant',
-        content: `⚠️ **Connection Error**\n\nI couldn't process your request. Please ensure:\n1. The backend server is running (python jarvis_api.py)\n2. Check your internet connection\n3. Try again in a moment\n\nError: ${errorMsg}`,
-      });
+      addMessage({ role: 'assistant', content: `⚠️ **Connection Error**\n\nI couldn't process your request. Please ensure:\n1. The backend server is running (python jarvis_api.py)\n2. Check your internet connection\n3. Try again in a moment\n\nError: ${errorMsg}` });
     } finally {
       setIsTyping(false);
     }
-  }, [input, uploadedFile, loading, setInput, clearTypingInterval, clearMessages, addMessage, setIsTyping, sendMessage]);
+  }, [input, uploadedFile, loading, setInput, clearTypingInterval, clearMessages, addMessage, setIsTyping]);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const applyFormat = useCallback((format: 'bold' | 'italic' | 'bullet' | 'numbered' | 'check' | 'quote' | 'code') => {
+    const textarea = inputRef.current;
+    const start = textarea?.selectionStart ?? input.length;
+    const end = textarea?.selectionEnd ?? input.length;
+    const selected = input.slice(start, end);
+    const before = input.slice(0, start);
+    const after = input.slice(end);
+
+    const linePrefix = (prefix: string, fallback: string) => {
+      const source = selected || fallback;
+      return source
+        .split('\n')
+        .map((line) => `${prefix}${line || fallback}`)
+        .join('\n');
+    };
+
+    const replacements: Record<typeof format, string> = {
+      bold: `**${selected || 'bold text'}**`,
+      italic: `*${selected || 'italic text'}*`,
+      bullet: linePrefix('- ', 'List item'),
+      numbered: (selected || 'First item\nSecond item')
+        .split('\n')
+        .map((line, index) => `${index + 1}. ${line || `Item ${index + 1}`}`)
+        .join('\n'),
+      check: linePrefix('- [ ] ', 'Task item'),
+      quote: linePrefix('> ', 'Quoted text'),
+      code: selected.includes('\n') ? `\`\`\`\n${selected || 'code'}\n\`\`\`` : `\`${selected || 'code'}\``,
+    };
+
+    const replacement = replacements[format];
+    const nextInput = `${before}${replacement}${after}`;
+    setInput(nextInput);
+
+    window.requestAnimationFrame(() => {
+      textarea?.focus();
+      const cursor = before.length + replacement.length;
+      textarea?.setSelectionRange(cursor, cursor);
+    });
+  }, [input, setInput]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -502,7 +688,33 @@ export default function ChatPanel() {
           )}
         </AnimatePresence>
 
-        <div className="flex items-center gap-3 glass-panel rounded-2xl p-2 max-w-3xl mx-auto w-full">
+        <div className="max-w-3xl mx-auto mb-2 flex items-center gap-1 overflow-x-auto px-1">
+          {[
+            { label: 'Bold', icon: Bold, format: 'bold' as const },
+            { label: 'Italic', icon: Italic, format: 'italic' as const },
+            { label: 'Bullet list', icon: List, format: 'ul' as const },
+            { label: 'Numbered list', icon: ListOrdered, format: 'ol' as const },
+            { label: 'Task list', icon: ListChecks, format: 'task' as const },
+            { label: 'Code', icon: Code2, format: 'code' as const },
+            { label: 'Quote', icon: Quote, format: 'quote' as const },
+          ].map((tool) => {
+            const Icon = tool.icon;
+            return (
+              <button
+                key={tool.label}
+                type="button"
+                onClick={() => applyFormat(tool.format)}
+                className="h-8 w-8 shrink-0 rounded-lg bg-white/5 text-jarvis-textMuted hover:bg-white/10 hover:text-jarvis-text transition-colors flex items-center justify-center"
+                title={tool.label}
+                disabled={loading}
+              >
+                <Icon size={15} />
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex items-end gap-3 glass-panel rounded-2xl p-2 max-w-3xl mx-auto w-full">
           {/* Mode Indicator */}
           <div
             className={`w-10 h-10 rounded-xl flex items-center justify-center ${
@@ -529,7 +741,7 @@ export default function ChatPanel() {
           <motion.button
             onClick={() => fileInputRef.current?.click()}
             disabled={loading || !!uploadedFile}
-            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all shrink-0 ${
               uploadedFile
                 ? 'bg-jarvis-accentPink/30 text-jarvis-accentPink'
                 : 'bg-white/5 text-jarvis-textMuted hover:text-jarvis-text hover:bg-white/10'
@@ -542,15 +754,15 @@ export default function ChatPanel() {
           </motion.button>
 
           {/* Text Input */}
-          <input
+          <textarea
             ref={inputRef}
-            type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={uploadedFile ? "Ask about the file... (or just send)" : "Type your command..."}
-            className="flex-1 bg-transparent text-jarvis-text placeholder-jarvis-textMuted outline-none text-sm"
+            placeholder={uploadedFile ? "Ask about the file... (or just send)" : "Message JARVIS..."}
+            className="max-h-32 min-h-10 flex-1 resize-none bg-transparent py-2 text-sm leading-6 text-jarvis-text placeholder-jarvis-textMuted outline-none scrollbar-visible"
             disabled={loading}
+            rows={1}
           />
 
           {/* Send Button */}
@@ -559,7 +771,7 @@ export default function ChatPanel() {
               void handleSend();
             }}
             disabled={(!input.trim() && !uploadedFile) || loading}
-            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all shrink-0 ${
               (input.trim() || uploadedFile) && !loading
                 ? 'bg-gradient-to-r from-jarvis-accentPink to-jarvis-accentRed text-white'
                 : 'bg-white/5 text-jarvis-textMuted'
@@ -663,16 +875,7 @@ function MessageBubble({
                     key={idx}
                     className="px-2 py-0.5 rounded text-[10px] bg-jarvis-accentPink/20 text-jarvis-accentPink"
                   >
-                    {action.type === 'open_app' && '🚀 Opened'}
-                    {action.type === 'close_app' && '❌ Closed'}
-                    {action.type === 'screenshot' && '📸 Screenshot'}
-                    {action.type === 'web_search' && '🔍 Search'}
-                    {action.type === 'add_todo' && '✅ Todo Added'}
-                    {action.type === 'add_note' && '📝 Note Saved'}
-                    {action.type === 'volume' && `🔊 ${action.action}`}
-                    {action.type === 'system_status' && '📊 System Status'}
-                    {action.type === 'daily_briefing' && '📅 Briefing'}
-                    {action.type === 'file_analyzed' && '📄 File Analyzed'}
+                    {getActionLabel(action)}
                   </span>
                 ))}
               </div>

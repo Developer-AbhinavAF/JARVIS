@@ -32,117 +32,107 @@ logger = logging.getLogger(__name__)
 
 
 def web_search(query: str) -> str:
-    """Search the web and return a concise answer/snippet summary."""
+    """Search the web and return a concise answer/snippet summary.
+
+    Runs Tavily and DuckDuckGo in parallel. Returns the fastest result.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import time as _time
 
     query = (query or "").strip()
     if not query:
         return "No query provided."
 
-    # a) Tavily (preferred) for compact answers.
-    api_key = (config.TAVILY_API_KEY or "").strip()
-    if api_key and api_key != "YOUR_TAVILY_API_KEY":
+    results: list[str] = []
+    start = _time.time()
+
+    def _tavily() -> str | None:
+        api_key = (config.TAVILY_API_KEY or "").strip()
+        if not api_key or api_key == "YOUR_TAVILY_API_KEY":
+            return None
         try:
-            logger.info("Searching Tavily for: %s", query[:50])
             resp = requests.post(
                 "https://api.tavily.com/search",
-                json={
-                    "api_key": api_key,
-                    "query": query,
-                    "max_results": 5,
-                    "include_answer": True,
-                },
+                json={"api_key": api_key, "query": query, "max_results": 5, "include_answer": True},
                 headers=config.SCRAPE_HEADERS,
-                timeout=config.SCRAPE_TIMEOUT,
+                timeout=min(config.SCRAPE_TIMEOUT, 8),
             )
             resp.raise_for_status()
             data = resp.json()
-
             answer = (data.get("answer") or "").strip()
             if answer:
-                logger.info("Tavily returned answer: %s", answer[:50])
                 return f"According to search results: {answer[:config.MAX_SNIPPET_CHARS]}"
-
-            results = data.get("results") or []
-            if results:
+            results_list = data.get("results") or []
+            if results_list:
                 snippets: list[str] = []
-                for r in results[:3]:
+                for r in results_list[:3]:
                     title = (r.get("title") or "").strip()
                     content = (r.get("content") or "").strip()
-                    url = (r.get("url") or "").strip()
                     if content:
-                        if title:
-                            snippets.append(f"{title}: {content}")
-                        else:
-                            snippets.append(content)
-
+                        snippets.append(f"{title}: {content}" if title else content)
                 joined = "\n\n".join(snippets).strip()
                 if joined:
                     return f"Search results:\n{joined[:config.MAX_SNIPPET_CHARS]}"
-            
-            logger.warning("Tavily returned no results for: %s", query)
-        except Exception as e:
-            logger.exception("Tavily search failed: %s", str(e))
-    else:
-        logger.warning("No Tavily API key configured")
+        except Exception:
+            logger.debug("Tavily search failed for: %s", query[:40])
+        return None
 
-    # b) DuckDuckGo HTML fallback.
-    try:
-        logger.info("Falling back to DuckDuckGo for: %s", query[:50])
-        url = "https://html.duckduckgo.com/html/"
-        resp = requests.get(
-            url,
-            params={"q": query},
-            headers=config.SCRAPE_HEADERS,
-            timeout=config.SCRAPE_TIMEOUT,
-        )
-        resp.raise_for_status()
-
-        soup = BeautifulSoup(resp.text, "lxml")
-        
-        # Try multiple selectors for results
-        snippets = []
-        
-        # Selector 1: result snippets
-        for div in soup.select("div.result__snippet"):
-            text = div.get_text(" ", strip=True)
-            if text and len(text) > 20:
-                snippets.append(text)
-        
-        # Selector 2: web results
-        if not snippets:
-            for result in soup.select(".web-result"):
-                text = result.get_text(" ", strip=True)
-                if text and len(text) > 20:
-                    snippets.append(text[:200])
-        
-        # Selector 3: any result div
-        if not snippets:
-            for div in soup.select(".result"):
+    def _duckduckgo() -> str | None:
+        try:
+            resp = requests.get(
+                "https://html.duckduckgo.com/html/",
+                params={"q": query},
+                headers=config.SCRAPE_HEADERS,
+                timeout=min(config.SCRAPE_TIMEOUT, 8),
+            )
+            resp.raise_for_status()
+            soup = BeautifulSoup(resp.text, "lxml")
+            snippets: list[str] = []
+            for div in soup.select("div.result__snippet"):
                 text = div.get_text(" ", strip=True)
                 if text and len(text) > 20:
-                    snippets.append(text[:200])
+                    snippets.append(text)
+            if not snippets:
+                for result in soup.select(".web-result"):
+                    text = result.get_text(" ", strip=True)
+                    if text and len(text) > 20:
+                        snippets.append(text[:200])
+            if not snippets:
+                for div in soup.select(".result"):
+                    text = div.get_text(" ", strip=True)
+                    if text and len(text) > 20:
+                        snippets.append(text[:200])
+            snippets = [s for s in snippets if s]
+            if snippets:
+                joined = "\n\n".join(snippets[:4]).strip()
+                return f"Search results:\n{joined[:config.MAX_SNIPPET_CHARS]}"
+        except Exception:
+            logger.debug("DuckDuckGo search failed for: %s", query[:40])
+        return None
 
-        snippets = [s for s in snippets if s]
+    searchers = {}
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        searchers[executor.submit(_tavily)] = "Tavily"
+        searchers[executor.submit(_duckduckgo)] = "DuckDuckGo"
+        for future in as_completed(searchers, timeout=60):
+            name = searchers[future]
+            try:
+                result = future.result()
+                if result:
+                    logger.info("Web search used %s (%.0fms)", name, (_time.time() - start) * 1000)
+                    return result
+            except Exception:
+                continue
 
-        if snippets:
-            joined = "\n\n".join(snippets[:4]).strip()
-            return f"Search results:\n{joined[:config.MAX_SNIPPET_CHARS]}"
-        
-        logger.warning("DuckDuckGo returned no results")
-        return "No search results found. The search service may be temporarily unavailable."
-        
-    except Exception as e:
-        logger.exception("DuckDuckGo search failed: %s", str(e))
-        
-    # c) Google direct link fallback
+    elapsed = (_time.time() - start) * 1000
+    logger.warning("All web searches failed for: %s (%.0fms)", query[:40], elapsed)
+
+    # Final fallback: Google link
     try:
         encoded_query = requests.utils.quote(query)
-        google_url = f"https://www.google.com/search?q={encoded_query}"
-        return f"Search services unavailable. Here's a Google search link:\n{google_url}"
+        return f"Search services unavailable. Here's a Google search link:\nhttps://www.google.com/search?q={encoded_query}"
     except:
-        pass
-    
-    return "Web search failed. Please check your internet connection or try again later."
+        return "Web search failed. Please check your internet connection or try again later."
 
 
 def plot_chart(chart_type: str, title: str, labels: list[str], values: list[float], save_path: str = None) -> str:

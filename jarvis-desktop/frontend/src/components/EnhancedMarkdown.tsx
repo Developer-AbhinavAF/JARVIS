@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { motion } from 'framer-motion';
 import { ExternalLink } from 'lucide-react';
 import { CodeCanvas } from './CodeCanvas';
@@ -8,9 +9,14 @@ interface EnhancedMarkdownProps {
   className?: string;
 }
 
+type ListItem = {
+  text: string;
+  checked?: boolean;
+};
+
 export function EnhancedMarkdown({ content, className = '' }: EnhancedMarkdownProps) {
   return (
-    <div className={`enhanced-markdown space-y-3 ${className}`}>
+    <div className={`enhanced-markdown space-y-3 text-sm leading-relaxed ${className}`}>
       <MarkdownContent content={content} />
     </div>
   );
@@ -18,14 +24,38 @@ export function EnhancedMarkdown({ content, className = '' }: EnhancedMarkdownPr
 
 function MarkdownContent({ content }: { content: string }) {
   const lines = content.split('\n');
-  const elements: React.ReactNode[] = [];
+  const elements: ReactNode[] = [];
   let key = 0;
+
+  const readList = (start: number, type: 'ul' | 'ol' | 'check') => {
+    const items: ListItem[] = [];
+    let i = start;
+
+    while (i < lines.length) {
+      const trimmed = lines[i].trim();
+      const checkboxMatch = trimmed.match(/^[-*]\s+\[( |x|X)\]\s+(.+)$/);
+      const bulletMatch = trimmed.match(/^[-*]\s+(.+)$/);
+      const numberedMatch = trimmed.match(/^\d+[.)]\s+(.+)$/);
+
+      if (type === 'check' && checkboxMatch) {
+        items.push({ text: checkboxMatch[2], checked: checkboxMatch[1].toLowerCase() === 'x' });
+      } else if (type === 'ul' && bulletMatch && !checkboxMatch) {
+        items.push({ text: bulletMatch[1] });
+      } else if (type === 'ol' && numberedMatch) {
+        items.push({ text: numberedMatch[1] });
+      } else {
+        break;
+      }
+      i++;
+    }
+
+    return { items, nextIndex: i - 1 };
+  };
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const trimmed = line.trim();
 
-    // Code blocks
     if (trimmed.startsWith('```')) {
       const language = trimmed.slice(3).trim();
       let code = '';
@@ -34,13 +64,10 @@ function MarkdownContent({ content }: { content: string }) {
         code += lines[i] + '\n';
         i++;
       }
-      elements.push(
-        <CodeCanvas key={key++} code={code.trim()} language={language || 'text'} />
-      );
+      elements.push(<CodeCanvas key={key++} code={code.trim()} language={language || 'text'} />);
       continue;
     }
 
-    // File canvas blocks
     if (trimmed.startsWith('~~~')) {
       const fileInfo = trimmed.slice(3).trim();
       let fileContent = '';
@@ -49,203 +76,186 @@ function MarkdownContent({ content }: { content: string }) {
         fileContent += lines[i] + '\n';
         i++;
       }
-      elements.push(
-        <FileCanvas key={key++} content={fileContent.trim()} filename={fileInfo} />
-      );
+      elements.push(<FileCanvas key={key++} content={fileContent.trim()} filename={fileInfo} />);
       continue;
     }
 
-    // Headings
     if (trimmed.startsWith('# ')) {
       elements.push(
-        <h1 key={key++} className="text-2xl font-bold text-jarvis-text mt-6 mb-4 gradient-text">
+        <h1 key={key++} className="text-xl font-semibold text-jarvis-text mt-5 mb-3">
           {parseInlineStyles(trimmed.slice(2))}
         </h1>
       );
       continue;
     }
+
     if (trimmed.startsWith('## ')) {
       elements.push(
-        <h2 key={key++} className="text-xl font-semibold text-jarvis-text mt-5 mb-3 border-b border-white/10 pb-2">
+        <h2 key={key++} className="text-lg font-semibold text-jarvis-text mt-4 mb-2 border-b border-white/10 pb-2">
           {parseInlineStyles(trimmed.slice(3))}
         </h2>
       );
       continue;
     }
+
     if (trimmed.startsWith('### ')) {
       elements.push(
-        <h3 key={key++} className="text-lg font-medium mt-4 mb-2 text-jarvis-accentPink">
+        <h3 key={key++} className="text-base font-semibold mt-3 mb-2 text-jarvis-accentPink">
           {parseInlineStyles(trimmed.slice(4))}
         </h3>
       );
       continue;
     }
 
-    // Numbered lists with colored bullets
-    const numberedMatch = trimmed.match(/^(\d+)[.)]\s*(.+)$/);
-    if (numberedMatch) {
-      const num = parseInt(numberedMatch[1]);
-      const text = numberedMatch[2];
-      const bulletColors = ['⏺️', '🔴', '🟠', '🟡', '🟢', '🔵', '🟣'];
-      const bullet = bulletColors[(num - 1) % bulletColors.length];
-      
+    if (/^[-*]\s+\[( |x|X)\]\s+/.test(trimmed)) {
+      const result = readList(i, 'check');
       elements.push(
-        <motion.div
-          key={key++}
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: num * 0.05 }}
-          className="flex items-start gap-3 py-2"
-        >
-          <span className="text-lg shrink-0">{bullet}</span>
-          <span className="text-jarvis-text mt-0.5">{parseInlineStyles(text)}</span>
-        </motion.div>
+        <ul key={key++} className="space-y-2 py-1">
+          {result.items.map((item, idx) => (
+            <li key={idx} className="flex items-start gap-3">
+              <span
+                className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] ${
+                  item.checked
+                    ? 'border-jarvis-accentPink bg-jarvis-accentPink text-white'
+                    : 'border-white/30'
+                }`}
+              >
+                {item.checked ? '✓' : ''}
+              </span>
+              <span className={item.checked ? 'text-jarvis-textMuted line-through' : 'text-jarvis-text'}>
+                {parseInlineStyles(item.text)}
+              </span>
+            </li>
+          ))}
+        </ul>
       );
+      i = result.nextIndex;
       continue;
     }
 
-    // Bullet lists
-    if (trimmed.startsWith('- ') || trimmed.startsWith('• ') || trimmed.startsWith('* ')) {
-      const text = trimmed.slice(2);
-      const bullets = ['⏺️', '◆', '▸', '•'];
-      const bullet = bullets[key % bullets.length];
-      
+    if (/^[-*]\s+/.test(trimmed)) {
+      const result = readList(i, 'ul');
       elements.push(
-        <motion.div
-          key={key++}
-          initial={{ opacity: 0, x: -10 }}
-          animate={{ opacity: 1, x: 0 }}
-          className="flex items-start gap-3 py-1.5 pl-4"
-        >
-          <span className="text-jarvis-accentPink shrink-0 mt-1">{bullet}</span>
-          <span className="text-jarvis-text">{parseInlineStyles(text)}</span>
-        </motion.div>
+        <ul key={key++} className="list-disc space-y-1.5 py-1 pl-5 marker:text-jarvis-accentPink">
+          {result.items.map((item, idx) => (
+            <li key={idx} className="pl-1 text-jarvis-text">
+              {parseInlineStyles(item.text)}
+            </li>
+          ))}
+        </ul>
       );
+      i = result.nextIndex;
       continue;
     }
 
-    // Checkboxes
-    if (trimmed.startsWith('- [ ] ') || trimmed.startsWith('- [x] ')) {
-      const isChecked = trimmed.startsWith('- [x] ');
-      const text = trimmed.slice(6);
-      
+    if (/^\d+[.)]\s+/.test(trimmed)) {
+      const result = readList(i, 'ol');
       elements.push(
-        <div key={key++} className="flex items-center gap-3 py-1.5 pl-4">
-          <span className={`w-5 h-5 rounded border-2 flex items-center justify-center text-xs ${
-            isChecked ? 'bg-jarvis-accentPink border-jarvis-accentPink text-white' : 'border-white/30'
-          }`}>
-            {isChecked && '✓'}
-          </span>
-          <span className={`text-jarvis-text ${isChecked ? 'line-through opacity-50' : ''}`}>
-            {parseInlineStyles(text)}
-          </span>
-        </div>
+        <ol key={key++} className="list-decimal space-y-1.5 py-1 pl-5 marker:text-jarvis-accentPink marker:font-semibold">
+          {result.items.map((item, idx) => (
+            <li key={idx} className="pl-1 text-jarvis-text">
+              {parseInlineStyles(item.text)}
+            </li>
+          ))}
+        </ol>
       );
+      i = result.nextIndex;
       continue;
     }
 
-    // Horizontal rule
     if (trimmed === '---' || trimmed === '***' || trimmed === '___') {
-      elements.push(
-        <hr key={key++} className="my-6 border-white/10" />
-      );
+      elements.push(<hr key={key++} className="my-5 border-white/10" />);
       continue;
     }
 
-    // Blockquote
     if (trimmed.startsWith('> ')) {
       elements.push(
-        <blockquote key={key++} className="border-l-4 border-jarvis-accentPink pl-4 py-2 my-3 bg-white/5 rounded-r-lg">
+        <blockquote key={key++} className="my-3 rounded-r-lg border-l-4 border-jarvis-accentPink bg-white/5 py-2 pl-4">
           <p className="text-jarvis-text italic">{parseInlineStyles(trimmed.slice(2))}</p>
         </blockquote>
       );
       continue;
     }
 
-    // Regular text
     if (trimmed) {
       elements.push(
-        <p key={key++} className="text-jarvis-text leading-relaxed py-1">
+        <p key={key++} className="text-jarvis-text">
           {parseInlineStyles(line)}
         </p>
       );
     } else {
-      elements.push(<div key={key++} className="h-2" />);
+      elements.push(<div key={key++} className="h-1" />);
     }
   }
 
   return <>{elements}</>;
 }
 
-function parseInlineStyles(text: string): React.ReactNode {
-  // Parse **bold**, *italic*, `code`, ~~strikethrough~~, ==highlight==, ^superscript^, [links](url)
-  const parts: React.ReactNode[] = [];
+function parseInlineStyles(text: string): ReactNode {
+  const parts: ReactNode[] = [];
   let remaining = text;
   let key = 0;
 
   const patterns = [
-    { regex: /\[([^\]]+)\]\(([^)]+)\)/, type: 'link', class: '' }, // [text](url) - must be first
-    { regex: /\*\*(.+?)\*\*/, type: 'bold', class: 'font-bold text-lg' },
-    { regex: /\*(.+?)\*/, type: 'italic', class: 'italic' },
-    { regex: /`(.+?)`/, type: 'code', class: 'font-mono bg-black/30 px-1.5 py-0.5 rounded text-sm text-jarvis-accentPink' },
-    { regex: /~~(.+?)~~/, type: 'strike', class: 'line-through opacity-50' },
-    { regex: /==(.+?)==/, type: 'highlight', class: 'bg-yellow-500/20 px-1 rounded' },
-    { regex: /\^(.+?)\^/, type: 'sup', class: 'text-xs align-super text-jarvis-accentPink' },
-    { regex: /~(.+?)~/, type: 'sub', class: 'text-xs align-sub' },
+    { regex: /\[([^\]]+)\]\(([^)]+)\)/, type: 'link', className: '' },
+    { regex: /\*\*(.+?)\*\*/, type: 'bold', className: 'font-semibold text-jarvis-text' },
+    { regex: /\*(.+?)\*/, type: 'italic', className: 'italic' },
+    { regex: /`(.+?)`/, type: 'code', className: 'font-mono bg-black/30 px-1.5 py-0.5 rounded text-[0.85em] text-jarvis-accentPink' },
+    { regex: /~~(.+?)~~/, type: 'strike', className: 'line-through opacity-60' },
+    { regex: /==(.+?)==/, type: 'highlight', className: 'rounded bg-yellow-500/20 px-1' },
   ];
 
   while (remaining) {
-    let earliestMatch: { pattern: typeof patterns[0], match: RegExpMatchArray, index: number } | null = null;
+    let earliestMatch: { pattern: (typeof patterns)[0]; match: RegExpMatchArray; index: number } | null = null;
 
     for (const pattern of patterns) {
       const match = remaining.match(pattern.regex);
-      if (match && (!earliestMatch || (remaining.indexOf(match[0]) < earliestMatch.index))) {
+      if (match && (!earliestMatch || remaining.indexOf(match[0]) < earliestMatch.index)) {
         earliestMatch = { pattern, match, index: remaining.indexOf(match[0]) };
       }
     }
 
-    if (earliestMatch && earliestMatch.index !== -1) {
-      if (earliestMatch.index > 0) {
-        parts.push(<span key={key++}>{remaining.slice(0, earliestMatch.index)}</span>);
-      }
-
-      const { pattern, match } = earliestMatch;
-      
-      // Handle links specially - render as clickable button
-      if (pattern.type === 'link') {
-        const linkText = match[1];
-        const linkUrl = match[2];
-        parts.push(
-          <motion.a
-            key={key++}
-            href={linkUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-jarvis-accentPink/20 hover:bg-jarvis-accentPink/30 border border-jarvis-accentPink/40 text-jarvis-accentPink text-sm font-medium transition-all group"
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={(e) => {
-              e.stopPropagation();
-              window.open(linkUrl, '_blank');
-            }}
-          >
-            <ExternalLink size={14} className="group-hover:rotate-12 transition-transform" />
-            {linkText}
-          </motion.a>
-        );
-      } else {
-        parts.push(
-          <span key={key++} className={pattern.class}>
-            {match[1]}
-          </span>
-        );
-      }
-
-      remaining = remaining.slice(earliestMatch.index + match[0].length);
-    } else {
+    if (!earliestMatch || earliestMatch.index === -1) {
       parts.push(<span key={key++}>{remaining}</span>);
       break;
     }
+
+    if (earliestMatch.index > 0) {
+      parts.push(<span key={key++}>{remaining.slice(0, earliestMatch.index)}</span>);
+    }
+
+    const { pattern, match } = earliestMatch;
+
+    if (pattern.type === 'link') {
+      const linkText = match[1];
+      const linkUrl = match[2];
+      parts.push(
+        <motion.a
+          key={key++}
+          href={linkUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 rounded-md border border-jarvis-accentPink/30 bg-jarvis-accentPink/15 px-2 py-0.5 text-sm font-medium text-jarvis-accentPink transition-colors hover:bg-jarvis-accentPink/25"
+          whileHover={{ scale: 1.01 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={(e) => {
+            e.stopPropagation();
+            window.open(linkUrl, '_blank');
+          }}
+        >
+          <ExternalLink size={13} />
+          {linkText}
+        </motion.a>
+      );
+    } else {
+      parts.push(
+        <span key={key++} className={pattern.className}>
+          {match[1]}
+        </span>
+      );
+    }
+
+    remaining = remaining.slice(earliestMatch.index + match[0].length);
   }
 
   return <>{parts}</>;

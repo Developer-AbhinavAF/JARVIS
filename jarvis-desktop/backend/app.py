@@ -9,6 +9,7 @@ import logging
 import os
 import sys
 import subprocess
+import time
 import webbrowser
 import psutil
 import random
@@ -21,13 +22,44 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 
-# Third-party API imports
+print("APP PID =", os.getpid())
+print("APP IMPORTED")
+
+# Add JARVIS to path BEFORE importing jarvis modules
+JARVIS_ROOT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(JARVIS_ROOT))
+
+# Load environment variables from project root .env
+from dotenv import load_dotenv
+env_path = JARVIS_ROOT / ".env"
+if env_path.exists():
+    load_dotenv(dotenv_path=str(env_path))
+
+from jarvis import config
+from jarvis.action_router import parse_action_line
+from jarvis.nlp_pipeline import nlp_pipeline
+from jarvis.memory import memory_save_permanent
+from jarvis.tool_router import route_input, execute_tool
+
+# Third-party API imports (optional - wrapped in try/except)
 import requests
-from gtts import gTTS
-from googletrans import Translator
-from duckduckgo_search import DDGS
 try:
-    import google.generativeai as genai
+    from gtts import gTTS
+except ImportError:
+    gTTS = None
+try:
+    from googletrans import Translator
+except ImportError:
+    Translator = None
+try:
+    from duckduckgo_search import DDGS
+except ImportError:
+    DDGS = None
+try:
+    import warnings
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=FutureWarning)
+        import google.generativeai as genai
 except ImportError:
     genai = None
 try:
@@ -39,9 +71,82 @@ except ImportError:
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger(__name__)
+
+
+# Per-request timing helper
+_timing_log: dict[str, float] = {}
+def _log_timing(label: str, started: float) -> None:
+    _timing_log[label] = round((time.time() - started) * 1000, 1)
+
+def _flush_timing_log() -> list[tuple[str, float]]:
+    items = sorted(_timing_log.items(), key=lambda x: x[1], reverse=True)
+    _timing_log.clear()
+    return items
+
+def _print_timing() -> str:
+    if not _timing_log:
+        return ""
+    total = _timing_log.get("total_request", sum(_timing_log.values()))
+    parts = " | ".join(f"{k}:{v:.0f}ms" for k, v in sorted(_timing_log.items()))
+    s = f"[TIMING] {parts} | TOTAL:{total:.0f}ms"
+    _timing_log.clear()
+    return s
+
+
+def _normalize_frontend_actions(actions: list[Any]) -> list[Dict[str, Any]]:
+    """Normalize action payloads returned by NLP/LLM/tool layers."""
+    normalized: list[Dict[str, Any]] = []
+    for action in actions or []:
+        if not isinstance(action, dict):
+            continue
+
+        if "tool" in action:
+            action_type = action.get("tool", "action")
+            normalized.append({
+                "type": action_type,
+                **{k: v for k, v in action.items() if k != "tool"},
+            })
+            continue
+
+        if "type" in action:
+            normalized.append(action)
+            continue
+
+        normalized.append({"type": "action", **action})
+    return normalized
+
+
+def _extract_structured_llm_payload(llm_response: Any) -> tuple[str, list[Dict[str, Any]]]:
+    """Return backend-stable text/actions from varied LLM response formats."""
+    if isinstance(llm_response, dict):
+        text = str(llm_response.get("text", "") or llm_response.get("response", "") or "")
+
+        raw_actions: list[Any] = []
+        if isinstance(llm_response.get("actions"), list):
+            raw_actions.extend(llm_response["actions"])
+
+        if isinstance(llm_response.get("tool_calls"), list):
+            for tool_call in llm_response["tool_calls"]:
+                if not isinstance(tool_call, dict):
+                    continue
+                function_data = tool_call.get("function") if isinstance(tool_call.get("function"), dict) else {}
+                arguments = function_data.get("arguments", {})
+                if isinstance(arguments, str):
+                    try:
+                        arguments = json.loads(arguments)
+                    except Exception:
+                        arguments = {"raw_arguments": arguments}
+
+                raw_actions.append({
+                    "tool": function_data.get("name", tool_call.get("name", "action")),
+                    "arguments": arguments if isinstance(arguments, dict) else {"value": arguments},
+                })
+
+        return text, _normalize_frontend_actions(raw_actions)
+
+    return str(llm_response) if llm_response is not None else "", []
 
 # In-memory log buffer for frontend display (terminal-style logs)
 MAX_LOG_BUFFER = 200  # Reduced for faster loading
@@ -101,12 +206,7 @@ async def broadcast_log(log_entry: Dict[str, Any]):
             disconnected.add(ws)
     log_subscribers.difference_update(disconnected)
 
-# Add JARVIS to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
-# Load environment variables (user will add API keys to .env)
-from dotenv import load_dotenv
-load_dotenv(dotenv_path="../../.env")
+# (JARVIS path and .env already loaded above)
 
 # API Keys from environment
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
@@ -214,7 +314,7 @@ class APIClient:
         
         try:
             url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={OPENWEATHER_API_KEY}&units=metric"
-            data = requests.get(url, timeout=10).json()
+            data = requests.get(url, timeout=60).json()
             
             if data.get("cod") != 200:
                 return {"error": data.get("message", "City not found")}
@@ -242,7 +342,7 @@ class APIClient:
         
         try:
             url = f"http://api.openweathermap.org/data/2.5/forecast?q={city}&appid={OPENWEATHER_API_KEY}&units=metric"
-            data = requests.get(url, timeout=10).json()
+            data = requests.get(url, timeout=60).json()
             
             if data.get("cod") != "200":
                 return {"error": data.get("message", "City not found")}
@@ -276,7 +376,7 @@ class APIClient:
             else:
                 url = f"https://newsapi.org/v2/top-headlines?country={country}&category={category}&apiKey={NEWSAPI_KEY}&pageSize=10"
             
-            data = requests.get(url, timeout=10).json()
+            data = requests.get(url, timeout=60).json()
             
             articles = []
             for article in data.get("articles", [])[:5]:
@@ -301,7 +401,7 @@ class APIClient:
         """CoinGecko (FREE: No API key needed!)"""
         try:
             url = f"https://api.coingecko.com/api/v3/simple/price?ids={coin}&vs_currencies=usd,inr&include_24hr_change=true"
-            data = requests.get(url, timeout=10).json()
+            data = requests.get(url, timeout=60).json()
             
             if coin not in data:
                 return {"error": f"Cryptocurrency '{coin}' not found"}
@@ -320,7 +420,7 @@ class APIClient:
         """Get trending cryptocurrencies"""
         try:
             url = "https://api.coingecko.com/api/v3/search/trending"
-            data = requests.get(url, timeout=10).json()
+            data = requests.get(url, timeout=60).json()
             
             coins = []
             for coin in data.get("coins", [])[:5]:
@@ -343,7 +443,7 @@ class APIClient:
         
         try:
             url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey={ALPHA_VANTAGE_KEY}"
-            data = requests.get(url, timeout=10).json()
+            data = requests.get(url, timeout=60).json()
             
             quote = data.get("Global Quote", {})
             if not quote:
@@ -371,7 +471,7 @@ class APIClient:
         
         try:
             url = f"https://www.googleapis.com/youtube/v3/search?part=snippet&q={query}&type=video&maxResults={max_results}&key={YOUTUBE_API_KEY}"
-            data = requests.get(url, timeout=10).json()
+            data = requests.get(url, timeout=60).json()
             
             videos = []
             for item in data.get("items", []):
@@ -479,7 +579,7 @@ class APIClient:
         
         try:
             url = f"https://serpapi.com/search?q={query}&api_key={SERPAPI_KEY}"
-            data = requests.get(url, timeout=10).json()
+            data = requests.get(url, timeout=60).json()
             
             results = []
             for r in data.get("organic_results", [])[:5]:
@@ -532,7 +632,7 @@ class APIClient:
         try:
             num = number if number else "random"
             url = f"http://numbersapi.com/{num}/{type}"
-            response = requests.get(url, timeout=10)
+            response = requests.get(url, timeout=60)
             return {"number": num, "type": type, "fact": response.text}
         except Exception as e:
             return {"error": str(e)}
@@ -541,7 +641,7 @@ class APIClient:
         """Useless Facts API (FREE: No key!)"""
         try:
             url = "https://uselessfacts.jsph.pl/random.json?language=en"
-            data = requests.get(url, timeout=10).json()
+            data = requests.get(url, timeout=60).json()
             return {"fact": data["text"], "source": data.get("source_url")}
         except Exception as e:
             return {"error": str(e)}
@@ -550,7 +650,7 @@ class APIClient:
         """Quote Garden (FREE: No key!)"""
         try:
             url = "https://quote-garden.onrender.com/api/v3/quotes/random"
-            data = requests.get(url, timeout=10).json()
+            data = requests.get(url, timeout=60).json()
             quote = data["data"][0]
             return {
                 "text": quote["quoteText"],
@@ -564,7 +664,7 @@ class APIClient:
         """JokeAPI (FREE: No key!)"""
         try:
             url = f"https://v2.jokeapi.dev/joke/{category}?safe-mode"
-            data = requests.get(url, timeout=10).json()
+            data = requests.get(url, timeout=60).json()
             
             if data.get("type") == "single":
                 return {"type": "single", "joke": data["joke"]}
@@ -580,7 +680,7 @@ class APIClient:
     def get_location_from_ip(self) -> Dict:
         """IP Geolocation (FREE: No API key!)"""
         try:
-            data = requests.get("https://ipapi.co/json/", timeout=10).json()
+            data = requests.get("https://ipapi.co/json/", timeout=60).json()
             return {
                 "ip": data.get("ip"),
                 "city": data.get("city"),
@@ -601,7 +701,7 @@ class APIClient:
         try:
             url = f"https://nominatim.openstreetmap.org/search?q={requests.utils.quote(address)}&format=json&limit=1"
             headers = {"User-Agent": "JARVIS/1.0"}
-            data = requests.get(url, headers=headers, timeout=10).json()
+            data = requests.get(url, headers=headers, timeout=60).json()
             
             if not data:
                 return {"error": "Address not found"}
@@ -636,7 +736,7 @@ class APIClient:
                 "html": f"<p>{body}</p>"
             }
             
-            response = requests.post("https://api.resend.com/emails", headers=headers, json=data, timeout=10)
+            response = requests.post("https://api.resend.com/emails", headers=headers, json=data, timeout=60)
             return {"success": True, "id": response.json().get("id")}
         except Exception as e:
             return {"error": str(e)}
@@ -652,7 +752,7 @@ class APIClient:
             url = f"https://steamspy.com/api.php?request=appdetails&appid=730"  # Example
             # Better: Use CheapShark for deals
             url = f"https://www.cheapshark.com/api/1.0/games?title={requests.utils.quote(query)}&limit=5"
-            data = requests.get(url, timeout=10).json()
+            data = requests.get(url, timeout=60).json()
             
             games = []
             for game in data[:5] if isinstance(data, list) else []:
@@ -690,7 +790,7 @@ class APIClient:
         try:
             url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={requests.utils.quote(query)}&page=1"
             headers = {"accept": "application/json"}
-            data = requests.get(url, headers=headers, timeout=10).json()
+            data = requests.get(url, headers=headers, timeout=60).json()
             
             movies = []
             for movie in data.get("results", [])[:5]:
@@ -713,7 +813,7 @@ class APIClient:
         
         try:
             url = f"https://api.themoviedb.org/3/trending/movie/day?api_key={TMDB_API_KEY}"
-            data = requests.get(url, timeout=10).json()
+            data = requests.get(url, timeout=60).json()
             
             movies = []
             for movie in data.get("results", [])[:5]:
@@ -736,7 +836,7 @@ class APIClient:
         try:
             # Search for page
             search_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={requests.utils.quote(query)}&format=json&srlimit=1"
-            search_data = requests.get(search_url, timeout=10).json()
+            search_data = requests.get(search_url, timeout=60).json()
             
             if not search_data.get("query", {}).get("search"):
                 return {"error": "No Wikipedia article found"}
@@ -746,7 +846,7 @@ class APIClient:
             
             # Get summary
             summary_url = f"https://en.wikipedia.org/w/api.php?action=query&prop=extracts&exsentences={sentences}&exintro=true&explaintext=true&pageids={page_id}&format=json"
-            summary_data = requests.get(summary_url, timeout=10).json()
+            summary_data = requests.get(summary_url, timeout=60).json()
             
             extract = summary_data["query"]["pages"][str(page_id)].get("extract", "No summary available")
             
@@ -768,7 +868,7 @@ class APIClient:
         """GitHub User Info - FREE!"""
         try:
             url = f"https://api.github.com/users/{username}"
-            data = requests.get(url, timeout=10).json()
+            data = requests.get(url, timeout=60).json()
             
             if data.get("message") == "Not Found":
                 return {"error": "User not found"}
@@ -792,7 +892,7 @@ class APIClient:
         """GitHub Repository Info"""
         try:
             url = f"https://api.github.com/repos/{owner}/{repo}"
-            data = requests.get(url, timeout=10).json()
+            data = requests.get(url, timeout=60).json()
             
             return {
                 "name": data.get("name"),
@@ -822,7 +922,7 @@ class APIClient:
             else:
                 url = "https://www.themealdb.com/api/json/v1/1/random.php"
             
-            data = requests.get(url, timeout=10).json()
+            data = requests.get(url, timeout=60).json()
             meals = data.get("meals", [])
             
             if not meals:
@@ -860,7 +960,7 @@ class APIClient:
         try:
             url = f"https://www.reddit.com/r/{subreddit}/hot.json?limit={limit}"
             headers = {"User-Agent": "JARVIS/1.0"}
-            data = requests.get(url, headers=headers, timeout=10).json()
+            data = requests.get(url, headers=headers, timeout=60).json()
             
             posts = []
             for post in data.get("data", {}).get("children", []):
@@ -926,652 +1026,171 @@ class JarvisCore:
         try:
             logger.info("Initializing JARVIS...")
             
-            # Import JARVIS modules
             from jarvis.memory import memory
             from jarvis.dashboard import SystemDashboard
             from jarvis.llm import JarvisLLM
             
             self.memory = memory
-            self.dashboard = SystemDashboard()
             self.llm = JarvisLLM()
-            
-            # Initialize YouTube learner
-            try:
-                from jarvis.youtube_learner import init_youtube_learner
-                init_youtube_learner(openai_client=self.llm.client, memory=self.memory)
-                logger.info("✅ YouTube learner initialized")
-            except Exception as e:
-                logger.warning(f"YouTube learner init failed: {e}")
-            
-            # Start monitoring
+            self.dashboard = SystemDashboard()
             self.dashboard.start_monitoring()
             
             self.initialized = True
-            logger.info("✅ JARVIS initialized successfully!")
+            logger.info("JARVIS initialized successfully!")
             
         except Exception as e:
             logger.error(f"Failed to initialize: {e}")
-            # Mark as initialized anyway so we don't keep retrying
-            # but components that failed will be None
             self.initialized = True
             
     async def chat(self, message: str, session_id: str = "default") -> Dict[str, Any]:
+        t_total = time.time()
         if not self.initialized:
             await self.initialize()
-        
-        # If LLM is not available, try to re-initialize
-        if not self.llm or not self.llm.client:
-            logger.warning("LLM not available, attempting to re-initialize...")
-            try:
-                from jarvis.llm import JarvisLLM
-                self.llm = JarvisLLM()
-                if self.llm.client:
-                    logger.info("✅ LLM re-initialized successfully!")
-                else:
-                    logger.error("❌ LLM re-initialization failed - no working client")
-            except Exception as e:
-                logger.error(f"❌ LLM re-initialization error: {e}")
-        
-        # If still not available, return error
-        if not self.llm or not self.llm.client:
+
+        if not self.llm:
             return {
-                "response": "⚠️ **AI Not Available**\n\nThe language model failed to initialize. Please check:\n• GROQ_API_KEY in .env file is valid\n• Internet connection is active\n• Backend logs for specific error details",
+                "response": "AI is not available. Please check backend logs.",
                 "actions": [],
                 "suggestions": ["check system status", "show logs"]
             }
-            
+
         q = message.strip().lower()
-        
-        # === ALWAYS USE LLM FIRST FOR NATURAL CONVERSATION ===
-        # Only use hardcoded commands for specific system control patterns
-        
-        # 1. Open apps/websites - Direct system command
-        if q.startswith("open ") and len(q) < 50:
-            target = message[5:].strip()
-            # Let LLM handle complex open requests, only direct ones here
-            if ' and ' not in target and ' then ' not in target:
-                return await self._handle_open(target)
-            
-        # 2. Critical system commands that need immediate execution
-        critical_patterns = {
-            "shutdown": ("shutdown", session_id),
-            "shut down": ("shutdown", session_id),
-            "power off": ("shutdown", session_id),
-            "restart": ("restart", session_id),
-            "reboot": ("restart", session_id),
-            "cancel shutdown": ("cancel_shutdown", session_id),
-            "abort shutdown": ("cancel_shutdown", session_id),
-        }
-        for pattern, (cmd, sid) in critical_patterns.items():
-            if pattern in q:
-                return await self._execute_single_task(cmd, sid)
-        
-        # 3. Direct media/volume controls (only very specific short commands)
-        media_patterns = {
-            "volume up": "volume_up",
-            "increase volume": "volume_up", 
-            "vol up": "volume_up",
-            "volume down": "volume_down",
-            "decrease volume": "volume_down",
-            "vol down": "volume_down",
-            "mute": "mute",
-            "unmute": "mute",
-            "unmute audio": "mute",
-            # Separate play and pause (not toggle) - let LLM handle specific media requests
-        }
-        for pattern, cmd in media_patterns.items():
-            if pattern in q and len(q) < 30:
-                return await self._execute_single_task(cmd, session_id)
-        
-        # 4. Media play commands - DIRECT TOOL CALL (not just toggle)
-        if q.startswith("play song ") and len(q) > 10:
-            song_query = q[10:].strip()
-            if song_query:
-                from jarvis.tools import play_music
-                result = play_music(song_query)
-                return {"response": f"🎵 Playing **{song_query}** for you!", "actions": [{"type": "play_music", "query": song_query}]}
-        
-        # Handle "play that song" pattern (e.g., "play that song xyz")
-        if q.startswith("play that song ") and len(q) > 15:
-            song_query = q[15:].strip()
-            if song_query:
-                from jarvis.tools import play_music
-                result = play_music(song_query)
-                return {"response": f"🎵 Playing **{song_query}** for you!", "actions": [{"type": "play_music", "query": song_query}]}
-        
-        # Handle "play that video" pattern
-        if q.startswith("play that video ") and len(q) > 16:
-            video_query = q[16:].strip()
-            if video_query:
-                from jarvis.tools import play_youtube
-                result = play_youtube(video_query)
-                return {"response": f"🎬 Playing video: **{video_query}**", "actions": [{"type": "play_video", "query": video_query}]}
-        
-        if q.startswith("play video ") and len(q) > 11:
-            video_query = q[11:].strip()
-            if video_query:
-                from jarvis.tools import play_youtube
-                result = play_youtube(video_query)
-                return {"response": f"🎬 Playing video: **{video_query}**", "actions": [{"type": "play_video", "query": video_query}]}
-        
-        if q.startswith("play music ") and len(q) > 11:
-            music_query = q[11:].strip()
-            if music_query:
-                from jarvis.tools import play_music
-                result = play_music(music_query)
-                return {"response": f"🎵 Playing **{music_query}**", "actions": [{"type": "play_music", "query": music_query}]}
-        
-        # Simple play commands (generic)
-        if q in ["play", "play music", "play media", "resume", "resume music"] and len(q) < 25:
-            return await self._execute_single_task("play_media", session_id)
-        
-        # Open media player apps when user says "play spotify", "play vlc", etc.
-        media_players = ["spotify", "vlc", "itunes", "music", "media player", "groove", "windows media player", "wynk", "jiosaavn"]
-        if q.startswith("play "):
-            rest = q[5:].strip().lower()
-            # Check if it's a media player
-            if rest in media_players:
-                from jarvis.tools import open_app
-                result = open_app(rest)
-                return {"response": f"🎵 Opening **{rest.title()}** for you!", "actions": [{"type": "open_app", "target": rest}]}
-            # Check if it's "play X on youtube" pattern
-            if " on youtube" in rest:
-                video_query = rest.replace(" on youtube", "").strip()
-                from jarvis.tools import play_youtube
-                result = play_youtube(video_query)
-                return {"response": f"🎬 Playing **{video_query}** on YouTube!", "actions": [{"type": "play_video", "query": video_query}]}
-            
-            # Generic "play X" - try to determine if song or video
-            if rest and len(rest) > 2 and rest not in media_players:
-                # Check for common song/music keywords
-                song_keywords = ['song', 'gaana', 'music', 'track', 'audio', 'mp3']
-                video_keywords = ['video', 'movie', 'clip', 'film', 'trailer', 'episode']
-                
-                is_song = any(keyword in rest for keyword in song_keywords)
-                is_video = any(keyword in rest for keyword in video_keywords)
-                
-                if is_song or not is_video:
-                    # Default to music for ambiguous queries
-                    from jarvis.tools import play_music
-                    result = play_music(rest)
-                    return {"response": f"🎵 Playing **{rest}** for you!", "actions": [{"type": "play_music", "query": rest}]}
-                else:
-                    # It's a video
-                    from jarvis.tools import play_youtube
-                    result = play_youtube(rest)
-                    return {"response": f"🎬 Playing video: **{rest}**", "actions": [{"type": "play_video", "query": rest}]}
-        
-        # 5. Media pause/stop commands (specific patterns only)
-        if q in ["pause", "pause music", "stop", "stop music", "stop media"] and len(q) < 25:
-            return await self._execute_single_task("pause_media", session_id)
-        
-        # 6. Document reading commands
-        # Handle "read this file", "what's written", "tell me what's in", etc.
-        doc_read_patterns = [
-            "read file ", "read document ", "upload ", "what's written in ", 
-            "whats written in ", "what is written in ", "tell me what's in ",
-            "tell me what is in ", "show me what's in ", "show me what is in ",
-            "what does this file contain", "what's in this file", "whats in this file",
-            "tell me what's written", "tell me what is written"
-        ]
-        
-        is_doc_read_command = any(q.startswith(pattern) or pattern in q for pattern in doc_read_patterns)
-        
-        if is_doc_read_command and len(q) > 10:
-            # Extract file path (handle both "read file C:/path" and "read file 'path'" formats)
-            file_path = None
-            if "read file " in q:
-                file_path = message[10:].strip().strip("'\"`")
-            elif "read document " in q:
-                file_path = message[14:].strip().strip("'\"`")
-            elif q.startswith("upload "):
-                file_path = message[7:].strip().strip("'\"`")
-            
-            if file_path and (file_path.endswith('.pdf') or file_path.endswith('.docx') or 
-                              file_path.endswith('.txt') or file_path.endswith('.xlsx') or
-                              file_path.endswith('.pptx') or file_path.endswith('.doc') or
-                              file_path.endswith('.xls') or file_path.endswith('.ppt')):
-                from jarvis.document_reader import read_document
-                result = read_document(file_path, save_to_memory=True)
-                
-                if result["success"]:
-                    summary = result.get('summary', '')[:300]
-                    return {
-                        "response": f"📄 **Document read successfully!**\n\n**File:** {result['file_name']}\n**Type:** {result['file_type']}\n**Words:** {result['word_count']}\n\n**Content Preview:**\n```\n{summary}...\n```\n\n✅ Document saved to memory for future reference!",
-                        "actions": [{"type": "read_document", "file_name": result['file_name'], "file_type": result['file_type']}]
-                    }
-                else:
-                    return {"response": f"⚠️ Could not read document: {result.get('error', 'Unknown error')}", "actions": []}
-        
-        # Handle "list my documents" or "show documents"
-        if q in ["list my documents", "show my documents", "show documents", "list documents", "what documents do you have"]:
-            from jarvis.document_reader import list_documents
-            docs = list_documents()
-            
-            if docs:
-                doc_list = "\n".join([f"• {doc.get('file_name', 'Unknown')} ({doc.get('word_count', 0)} words)" for doc in docs[:10]])
-                return {
-                    "response": f"📚 **Your saved documents:**\n\n{doc_list}\n\n💡 You can ask me to search in these documents or get their full content!",
-                    "actions": [{"type": "list_documents", "count": len(docs)}]
-                }
-            else:
-                return {"response": "📚 No documents saved yet. Upload a PDF, Word, Excel, or text file and I'll remember it!", "actions": []}
-        
-        # Handle "search in my documents" or "find in documents"
-        if (q.startswith("search in my documents ") or q.startswith("find in documents ") or 
-            q.startswith("search documents ") or q.startswith("find ")) and len(q) > 20:
-            # Extract search query
-            search_query = None
-            if "search in my documents " in q:
-                search_query = message[22:].strip()
-            elif "find in documents " in q:
-                search_query = message[18:].strip()
-            elif q.startswith("search documents "):
-                search_query = message[17:].strip()
-            elif q.startswith("find ") and len(q) > 10:
-                search_query = message[5:].strip()
-            
-            if search_query:
-                from jarvis.document_reader import search_documents
-                results = search_documents(search_query)
-                
-                if results:
-                    result_text = "\n\n".join([f"**{r['file_name']}** (found {r['match_count']} matches):\n```\n{r['snippet'][:200]}...\n```" for r in results[:5]])
-                    return {
-                        "response": f"🔍 **Search results for '{search_query}':**\n\n{result_text}",
-                        "actions": [{"type": "search_documents", "query": search_query, "results": len(results)}]
-                    }
-                else:
-                    return {"response": f"🔍 No results found for '{search_query}' in your documents. Try a different search term!", "actions": []}
-        
-        # 7. YOUTUBE VIDEO LEARNING
-        # First check if user is asking about learned videos
-        if any(pattern in q for pattern in ["what did you learn", "tell me about the video", "video summary", "what was in the video"]):
-            try:
-                sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'jarvis'))
-                from jarvis.memory import memory
-                notes = memory.get_youtube_notes(limit=1)
-                if notes:
-                    latest = notes[0]
-                    key_points = "\n".join([f"• {point}" for point in latest.get('key_points', [])[:5]])
-                    return {"response": f"🎓 **Latest Learning: {latest.get('title', 'Unknown')}**\n\n**Summary:**\n{latest.get('summary', 'No summary')[:400]}...\n\n**Key Points:**\n{key_points}\n\n🔗 [Watch Video]({latest.get('url', '')})", "actions": [{"type": "youtube_notes", "video_id": latest.get('video_id')}]}
-                else:
-                    return {"response": "📚 I haven't learned from any YouTube videos yet. Send me a video URL to learn from it!", "actions": []}
-            except Exception as e:
-                logger.error(f"YouTube notes error: {e}")
-        
-        youtube_patterns = ["learn from this video", "learn from youtube", "youtube.com/watch", "youtu.be/", "learn from https://"]
-        if any(pattern in q for pattern in youtube_patterns):
-            import re
-            import uuid
-            url_match = re.search(r'(https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)[^\s&]+)', message)
-            if url_match:
-                url = url_match.group(0)
-                task_id = str(uuid.uuid4())[:8]
-                try:
-                    sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'jarvis'))
-                    from jarvis.youtube_learner import learn_from_youtube, youtube_learner
-                    
-                    # Check if yt-dlp is available
-                    if not youtube_learner:
-                        return {"response": "⚠️ YouTube learner not initialized. Check if yt-dlp is installed.", "actions": []}
-                    
-                    # Start progress - 0%
-                    await broadcast_learning_progress(task_id, {
-                        "active": True,
-                        "title": "Initializing...",
-                        "percent": 5,
-                        "status": "Checking video URL...",
-                        "logs": ["Starting..."]
-                    })
-                    
-                    # Start the learning task in background (but in same event loop for WebSocket access)
-                    async def learn_task_with_progress():
-                        try:
-                            # Step 1: Get video info (10%) - use thread to prevent blocking
-                            await broadcast_learning_progress(task_id, {
-                                "active": True,
-                                "title": url[:60] + "...",
-                                "percent": 10,
-                                "status": "Getting video info...",
-                                "logs": ["Fetching video metadata..."]
-                            })
-                            
-                            # Run blocking function in thread
-                            video_info = await asyncio.to_thread(youtube_learner.get_video_info, url)
-                            if not video_info:
-                                await broadcast_learning_progress(task_id, {
-                                    "active": True,
-                                    "title": "Failed",
-                                    "percent": 0,
-                                    "status": "❌ Could not get video info",
-                                    "logs": ["Error: Could not extract video ID"]
-                                })
-                                return
-                            
-                            title = video_info.title
-                            duration = video_info.duration
-                            
-                            # Step 2: Try YouTube transcript API first (FAST! 10-40%)
-                            await broadcast_learning_progress(task_id, {
-                                "active": True,
-                                "title": title[:60],
-                                "percent": 20,
-                                "status": "Fetching YouTube transcript...",
-                                "logs": [f"Video: {title[:50]}...", "Trying YouTube captions API..."]
-                            })
-                            
-                            transcript = await youtube_learner._get_youtube_transcript(url)
-                            
-                            # Step 3: If transcript not available, download audio (40-70%)
-                            audio_path = None
-                            if not transcript or len(transcript) < 50:
-                                await broadcast_learning_progress(task_id, {
-                                    "active": True,
-                                    "title": title[:60],
-                                    "percent": 40,
-                                    "status": f"Downloading audio (this may take 2-3 min)...",
-                                    "logs": ["Captions not available", "Downloading audio..."]
-                                })
-                                
-                                # Run download in thread with timeout
-                                try:
-                                    audio_path = await asyncio.wait_for(
-                                        asyncio.to_thread(youtube_learner.download_audio, url),
-                                        timeout=300  # 5 minute timeout for large videos
-                                    )
-                                except asyncio.TimeoutError:
-                                    logger.warning(f"Audio download timed out for {url}")
-                                    audio_path = None
-                                
-                                if not audio_path:
-                                    await broadcast_learning_progress(task_id, {
-                                        "active": True,
-                                        "title": title[:60],
-                                        "percent": 0,
-                                        "status": "❌ No transcript/captions available",
-                                        "logs": ["Error: No captions and download failed/timeout"]
-                                    })
-                                    return
-                                
-                                # Step 4: Transcribe (70-85%)
-                                await broadcast_learning_progress(task_id, {
-                                    "active": True,
-                                    "title": title[:60],
-                                    "percent": 70,
-                                    "status": "Transcribing audio with Whisper...",
-                                    "logs": ["Download complete", "Transcribing with AI..."]
-                                })
-                                
-                                transcript = youtube_learner.transcribe_audio(audio_path)
-                                
-                                # Cleanup
-                                try:
-                                    if audio_path:
-                                        os.remove(audio_path)
-                                except:
-                                    pass
-                            else:
-                                await broadcast_learning_progress(task_id, {
-                                    "active": True,
-                                    "title": title[:60],
-                                    "percent": 40,
-                                    "status": "✅ YouTube transcript fetched!",
-                                    "logs": ["✅ Got transcript from YouTube captions!"]
-                                })
-                            
-                            if not transcript or len(transcript) < 50:
-                                await broadcast_learning_progress(task_id, {
-                                    "active": True,
-                                    "title": title[:60],
-                                    "percent": 0,
-                                    "status": "❌ No transcript available",
-                                    "logs": ["Error: Could not extract transcript"]
-                                })
-                                return
-                            
-                            # Step 5: Summarize (85-95%)
-                            await broadcast_learning_progress(task_id, {
-                                "active": True,
-                                "title": title[:60],
-                                "percent": 85,
-                                "status": "Creating notes with AI...",
-                                "logs": ["Transcript ready", "Summarizing with AI..."]
-                            })
-                            
-                            notes = await youtube_learner.summarize_transcript(transcript, video_info)
-                            
-                            # Step 6: Save to memory (95-100%)
-                            await broadcast_learning_progress(task_id, {
-                                "active": True,
-                                "title": title[:60],
-                                "percent": 95,
-                                "status": "Saving to memory...",
-                                "logs": ["Summary created", "Saving to memory..."]
-                            })
-                            
-                            if youtube_learner.memory:
-                                youtube_learner._save_to_memory(notes)
-                            
-                            # Complete!
-                            await broadcast_learning_progress(task_id, {
-                                "active": True,
-                                "title": title[:60],
-                                "percent": 100,
-                                "status": f"✅ Learned: {title[:40]}",
-                                "logs": ["✅ Done!", f"Key points: {len(notes.key_points)}", "Saved to memory!"]
-                            })
-                            
-                            # Keep visible for 10 seconds then clear
-                            await asyncio.sleep(10)
-                            await broadcast_learning_progress(task_id, {
-                                "active": False,
-                                "title": "",
-                                "percent": 0,
-                                "status": "",
-                                "logs": []
-                            })
-                            
-                        except Exception as e:
-                            logger.exception(f"Learning task failed: {e}")
-                            await broadcast_learning_progress(task_id, {
-                                "active": True,
-                                "title": "Error",
-                                "percent": 0,
-                                "status": f"❌ Error: {str(e)[:50]}",
-                                "logs": [f"Error: {str(e)}"]
-                            })
-                    
-                    # Start the background task (in same event loop)
-                    asyncio.create_task(learn_task_with_progress())
-                    
-                    return {
-                        "response": f"🎓 **Learning started!**\n\nAnalyzing: {url}\n\n📊 Watch the progress bar in the bottom-right corner!\n\n💡 You can continue chatting while I learn from this video.",
-                        "actions": [{"type": "youtube_learn", "url": url, "task_id": task_id}]
-                    }
-                except Exception as e:
-                    logger.error(f"YouTube error: {e}")
-                    return {"response": f"⚠️ YouTube learning error: {str(e)}", "actions": []}
-        
-        # 8. WEB BROWSER
-        if any(pattern in q for pattern in ["visit page", "visit website", "https://"]):
-            import re
-            url_match = re.search(r'(https?://[^\s]+)', message)
-            if url_match:
-                url = url_match.group(0)
-                try:
-                    sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'jarvis'))
-                    from jarvis.web_browser import visit_page
-                    content = await visit_page(url)
-                    if content:
-                        preview = content.text[:1200] if len(content.text) > 1200 else content.text
-                        return {"response": f"🌐 **{content.title}**\n\n{preview}{'...' if len(content.text) > 1200 else ''}", "actions": [{"type": "web_visit", "url": url}]}
-                except Exception as e:
-                    logger.error(f"Web error: {e}")
-        
-        # 9. SHOPPING
-        shopping_keywords = ["buy ", "purchase ", "find cheapest", "lowest price", "compare prices", "shopping for"]
-        if any(q.startswith(kw) or kw in q for kw in shopping_keywords):
-            product = message
-            for prefix in ["buy ", "purchase ", "find cheapest ", "shopping for ", "looking for "]:
-                if product.lower().startswith(prefix):
-                    product = product[len(prefix):].strip()
-                    break
-            if product and len(product) > 2:
-                try:
-                    sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'jarvis'))
-                    from jarvis.shopping import shopping_assistant, search_product
-                    
-                    # Broadcast start
-                    await broadcast_shopping_progress(product, "searching", "Starting search...")
-                    
-                    # Search with platform updates
-                    platforms = ['amazon', 'flipkart', 'myntra', 'meesho', 'shopsy']
-                    all_products = []
-                    searched_platforms = []
-                    
-                    for platform in platforms:
-                        try:
-                            await broadcast_shopping_progress(product, "searching", platform.capitalize())
-                            
-                            if platform == 'amazon':
-                                amazon_products = await shopping_assistant.search_amazon(product)
-                                all_products.extend(amazon_products)
-                                if amazon_products:
-                                    searched_platforms.append('Amazon')
-                                    await broadcast_shopping_progress(product, "found", "Amazon", len(amazon_products))
-                            elif platform == 'flipkart':
-                                flipkart_products = await shopping_assistant.search_flipkart(product)
-                                all_products.extend(flipkart_products)
-                                if flipkart_products:
-                                    searched_platforms.append('Flipkart')
-                                    await broadcast_shopping_progress(product, "found", "Flipkart", len(flipkart_products))
-                            else:
-                                products = await shopping_assistant.search_simple_platform(product, platform)
-                                all_products.extend(products)
-                                if products:
-                                    searched_platforms.append(platform.capitalize())
-                                    await broadcast_shopping_progress(product, "found", platform.capitalize(), len(products))
-                        except Exception as e:
-                            logger.warning(f"Platform {platform} search failed: {e}")
-                            continue
-                    
-                    # Create result
-                    from jarvis.shopping import ShoppingResult
-                    result = ShoppingResult(
-                        query=product,
-                        products=all_products,
-                        total_found=len(all_products),
-                        platforms_searched=searched_platforms,
-                    )
-                    
-                    # Broadcast complete
-                    await broadcast_shopping_progress(product, "completed", "", len(all_products))
-                    
-                    formatted = shopping_assistant.format_results(result, min_rating=4.0, limit=5)
-                    return {"response": formatted, "actions": [{"type": "shopping", "query": product}]}
-                except Exception as e:
-                    logger.error(f"Shopping error: {e}")
-                    await broadcast_shopping_progress(product, "error", str(e)[:50])
-        
-        # === LLM FOR ALL OTHER CONVERSATION ===
+
+        # ── CRITICAL SAFETY COMMANDS (always work even if LLM/tools fail) ──
+        if any(pattern in q for pattern in ("shutdown", "shut down", "power off")):
+            return await self._execute_single_task("shutdown", session_id)
+        if any(pattern in q for pattern in ("restart", "reboot")):
+            return await self._execute_single_task("restart", session_id)
+        if any(pattern in q for pattern in ("cancel shutdown", "abort shutdown")):
+            return await self._execute_single_task("cancel_shutdown", session_id)
+
+        t1 = time.time()
+        nlp_result = None
         try:
-            if self.llm and self.llm.client:
-                # Build context from memory
-                memory_context = ""
+            nlp_result = nlp_pipeline.process(message)
+            _log_timing("nlp_classify", t1)
+
+            if nlp_result.action:
+                parsed_action = parse_action_line(nlp_result.action)
+                if parsed_action:
+                    frontend_action = parsed_action.to_frontend_action()
+                    action_type = frontend_action.get("tool", "")
+                    if action_type == "web_search":
+                        response_text = f"Searching the web for {frontend_action.get('query', 'your request')}."
+                    elif action_type == "open_url":
+                        response_text = f"Opening {frontend_action.get('url', 'the requested site')}."
+                    elif action_type == "open_app":
+                        response_text = f"Opening {frontend_action.get('app', 'the requested app')}."
+                    else:
+                        response_text = "Done."
+                    return {
+                        "response": response_text,
+                        "actions": _normalize_frontend_actions([frontend_action]),
+                    }
+
+            if nlp_result.should_remember and nlp_result.intent != "remember":
                 try:
-                    from jarvis.memory import memory
-                    # Get recent conversations
-                    recent = memory.get_recent_conversations(limit=3)
-                    if recent:
-                        memory_context = "\nRecent conversation context:\n"
-                        for conv in recent:
-                            memory_context += f"- {conv.get('summary', '')}\n"
-                    
-                    # Get relevant preferences
-                    prefs = memory.get_all_preferences()
-                    if prefs:
-                        memory_context += "\nUser preferences:\n"
-                        for key, value in list(prefs.items())[:5]:
-                            memory_context += f"- {key}: {value}\n"
-                    
-                    # Search notes for relevant information based on keywords in message
-                    keywords = [w for w in message.lower().split() if len(w) > 3]
-                    for keyword in keywords[:3]:
-                        notes = memory.search_notes(keyword)
-                        if notes:
-                            memory_context += f"\nRelevant information about '{keyword}':\n"
-                            for note in notes[:2]:
-                                memory_context += f"- {note.get('title', '')}: {note.get('content', '')[:100]}...\n"
-                            break  # Only add notes for first matching keyword
-                            
-                except Exception as e:
-                    logger.debug(f"Could not load memory context: {e}")
-                
-                # Enhance message with context
-                enhanced_message = message
-                if memory_context:
-                    enhanced_message = f"{memory_context}\n\nCurrent message: {message}"
-                
-                # Use smaller max_tokens for faster, cheaper responses (256 tokens = ~200 words)
-                llm_response = self.llm.chat(enhanced_message, max_tokens=256)
-                
-                # New format: LLM returns dict with text and actions
-                if isinstance(llm_response, dict):
-                    text = llm_response.get("text", "")
-                    actions = llm_response.get("actions", [])
-                    
-                    # Format actions for frontend
-                    formatted_actions = []
-                    for action in actions:
-                        if isinstance(action, dict):
-                            action_type = action.get("tool", "action")
-                            formatted_actions.append({
-                                "type": action_type,
-                                **{k: v for k, v in action.items() if k != "tool"}
-                            })
-                    
-                    return {"response": text, "actions": formatted_actions}
-                
-                # Fallback for old string format
-                elif isinstance(llm_response, str):
-                    response_text = llm_response
+                    category = "preference" if any(m in q for m in ["i prefer", "my preference", "always", "never"]) else "general"
+                    t_mem = time.time()
+                    memory_save_permanent(message, category=category)
+                    _log_timing("memory_save", t_mem)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # ── TOOL-FIRST ROUTING ──
+        t2 = time.time()
+        action = route_input(message)
+        _log_timing("tool_routing", t2)
+        if action and action.confidence >= 0.70:
+            if action.structured_action:
+                frontend_action = action.structured_action.to_frontend_action()
+                action_type = frontend_action.get("tool", "")
+                if action_type == "web_search":
+                    response_text = f"Searching the web for {frontend_action.get('query', 'your request')}."
+                elif action_type == "open_url":
+                    response_text = f"Opening {frontend_action.get('url', 'the requested site')}."
+                elif action_type == "open_app":
+                    response_text = f"Opening {frontend_action.get('app', 'the requested app')}."
                 else:
-                    response_text = str(llm_response)
-                
-                # Save conversation to memory
-                try:
-                    from jarvis.memory import memory
-                    summary = f"User: {message[:50]}... | Assistant: {response_text[:50]}..."
-                    topics = ["conversation"]
-                    if any(word in message.lower() for word in ["weather", "time", "date"]):
-                        topics.append("general_info")
-                    if any(word in message.lower() for word in ["file", "document", "pdf", "doc"]):
-                        topics.append("documents")
-                    memory.save_conversation(summary, topics, importance=2)
-                except Exception as e:
-                    logger.debug(f"Could not save conversation: {e}")
-                
-                return {"response": response_text, "actions": []}
-                    
-            else:
-                # LLM client is None - API keys likely invalid
-                logger.error("LLM client is None - API keys may be invalid")
+                    response_text = "Done."
                 return {
-                    "response": "⚠️ **AI System Error**\n\nCould not connect to language models.\n\nPlease check:\n• API keys are configured and valid in .env file\n• Internet connection is active\n• Backend logs for more details",
-                    "actions": [],
-                    "suggestions": ["check system status", "show logs"]
+                    "response": response_text,
+                    "actions": _normalize_frontend_actions([frontend_action]),
                 }
-                
+            try:
+                t3 = time.time()
+                tool_result = execute_tool(action)
+                _log_timing("tool_exec", t3)
+                if isinstance(tool_result, dict):
+                    response_text = str(
+                        tool_result.get("response", "")
+                        or tool_result.get("text", "")
+                        or "Done."
+                    )
+                    actions = _normalize_frontend_actions(tool_result.get("actions", []))
+                    payload: Dict[str, Any] = {
+                        "response": response_text,
+                        "actions": actions,
+                    }
+                    if isinstance(tool_result.get("suggestions"), list):
+                        payload["suggestions"] = tool_result["suggestions"]
+                    return payload
+
+                result_text = str(tool_result)
+                if result_text and result_text != "None":
+                    return {"response": result_text, "actions": []}
+            except Exception as e:
+                logger.warning("Tool '%s' threw exception: %s", action.name, e)
+
+        # ── LLM FALLBACK (offloaded to thread pool to avoid blocking event loop) ──
+        t4 = time.time()
+        try:
+            loop = asyncio.get_event_loop()
+            llm_response = await loop.run_in_executor(
+                None, self.llm.chat, message, None, config.LLM_MAX_TOKENS
+            )
+            _log_timing("llm_total", t4)
         except Exception as e:
             logger.error(f"LLM error: {e}")
-            # Better fallback when LLM fails
+            _log_timing("llm_fail", t4)
             return {
-                "response": "I'm experiencing a temporary issue with my language processing. Let me help you with what I can:\n\n• Try system commands like 'system status' or 'open chrome'\n• Ask me about time, weather, or calculations\n• I can take screenshots or control volume\n\nWhat would you like me to do?",
+                "response": "I'm experiencing a temporary issue. Try system commands like 'system status' or 'open chrome'.",
                 "actions": [],
-                "suggestions": ["system status", "open youtube", "what time is it", "help"]
+                "suggestions": ["system status", "open youtube", "what time is it", "help"],
             }
-    
+
+        t5 = time.time()
+        response_text, actions = _extract_structured_llm_payload(llm_response)
+        _log_timing("response_parse", t5)
+        _log_timing("total_request", t_total)
+
+        return {"response": response_text, "actions": actions}
+
+    def chat_stream(self, message: str, session_id: str = "default", max_tokens: int = 48):
+        """Streaming chat (sync gen — Starlette auto-threads it). Yields SSE strings."""
+        if not self.llm:
+            yield f"data: {json.dumps({'error': 'AI not available'})}\n\n"
+            yield f"data: {json.dumps({'done': True})}\n\n"
+            return
+
+        collected: list[str] = []
+        try:
+            for token in self.llm.chat_stream(message, max_tokens=max_tokens):
+                if token:
+                    collected.append(token)
+                    yield f"data: {json.dumps({'token': token})}\n\n"
+        except Exception as e:
+            logger.error(f"LLM stream error: {e}")
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+        response_text = "".join(collected)
+        parsed_text, actions = _extract_structured_llm_payload(
+            {"text": response_text} if not response_text.startswith("{") else response_text
+        )
+        yield f"data: {json.dumps({'done': True, 'response': parsed_text, 'actions': actions})}\n\n"
+
     async def _handle_open(self, target: str) -> Dict[str, Any]:
         """Handle open commands"""
         target_lower = target.lower()
@@ -2349,8 +1968,8 @@ async def chat(request: Request):
         file_type = None
         file_data = None
         
+        stream_mode = False
         if "multipart/form-data" in content_type:
-            # Handle Form data (file uploads)
             form = await request.form()
             message = form.get("message", "")
             session_id = form.get("session_id", "default")
@@ -2358,30 +1977,21 @@ async def chat(request: Request):
             file_type = form.get("file_type")
             file_data = form.get("file_data")
         else:
-            # Handle JSON data (regular chat)
             json_data = await request.json()
             message = json_data.get("message", "")
             session_id = json_data.get("session_id", "default")
+            stream_mode = json_data.get("stream", False)
         
-        # Log like uvicorn: INFO:     127.0.0.1:56219 - "POST /api/chat HTTP/1.1" 200 OK
         logger.info(f"Chat request: message='{message[:100]}...', session={session_id}")
-        logger.info(f"     {client_host}:{client_port} - \"POST /api/chat HTTP/1.1\" 200 OK")
         
-        # Handle file upload if present
         if file_data and file_name:
             logger.info(f"Processing file upload: {file_name} ({file_type})")
-            
-            # Decode base64 file data
             import base64
             file_bytes = base64.b64decode(file_data)
-            
-            # Handle image analysis
             if file_type and file_type.startswith("image/"):
                 result = await jarvis_core._handle_image_analysis(file_bytes, file_name, message or "What's in this image?")
             else:
-                # Handle other file types (text extraction, etc.)
                 result = await jarvis_core._handle_file_analysis(file_bytes, file_name, file_type, message or "Analyze this file")
-            
             return {
                 "response": result.get("response", ""),
                 "session_id": session_id,
@@ -2390,8 +2000,35 @@ async def chat(request: Request):
                 "suggestions": result.get("suggestions", ["What else can you see?", "Summarize this", "Extract text"])
             }
         
-        # Regular text chat
+        if stream_mode:
+            from fastapi.responses import StreamingResponse
+            logger.info(f"     {client_host}:{client_port} - \"POST /api/chat (stream) HTTP/1.1\" 200 OK")
+            q = message.strip().lower()
+            if any(p in q for p in ("shutdown", "shut down", "power off", "restart", "reboot", "cancel shutdown", "abort shutdown")):
+                result = await jarvis_core._execute_single_task(q.split()[0], session_id)
+                text = result.get('response', 'Done.')
+                async def _single():
+                    yield f"data: {json.dumps({'token': text})}\n\n"
+                    yield f"data: {json.dumps({'done': True})}\n\n"
+                return StreamingResponse(_single(), media_type="text/event-stream", headers={
+                    "Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no",
+                })
+            return StreamingResponse(
+                jarvis_core.chat_stream(message, session_id, max_tokens=config.LLM_MAX_TOKENS),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no",
+                },
+            )
+        
+        # Regular text chat (non-streaming)
+        logger.info(f"     {client_host}:{client_port} - \"POST /api/chat HTTP/1.1\" 200 OK")
         result = await jarvis_core.chat(message, session_id)
+        timing_str = _print_timing()
+        if timing_str:
+            logger.info(timing_str)
         return {
             "response": result.get("response", ""),
             "session_id": session_id,
@@ -2434,7 +2071,7 @@ async def save_correction(request: CorrectionRequest):
         )
         
         if success:
-            logger.info(f"💡 Correction saved for: {request.original_query[:50]}...")
+            logger.info(f"Correction saved for: {request.original_query[:50]}...")
             return {
                 "status": "success",
                 "message": "Thanks for teaching me! I'll remember this and won't make the same mistake again.",
@@ -2539,7 +2176,7 @@ async def reset_memory():
         # Delete the database file
         if os.path.exists(db_path):
             os.remove(db_path)
-            logger.info(f"🗑️ Memory database deleted: {db_path}")
+            logger.info(f"Memory database deleted: {db_path}")
         
         # Re-initialize fresh database
         memory.__init__()
@@ -2586,7 +2223,7 @@ async def upload_document(
         from jarvis.document_reader import read_document
         import os
         
-        logger.info(f"📤 Upload started: {file.filename}, content_type={file.content_type}")
+        logger.info(f"Upload started: {file.filename}, content_type={file.content_type}")
         
         # Create uploads directory if not exists (use absolute path)
         uploads_dir = Path(os.path.dirname(os.path.abspath(__file__))) / "uploads"
@@ -2620,7 +2257,7 @@ async def upload_document(
         result["saved_size"] = saved_size
         
         if result["success"]:
-            logger.info(f"✅ Document uploaded and read: {file.filename} ({result.get('word_count', 0)} words, {result.get('content_length', 0)} chars)")
+            logger.info(f"Document uploaded and read: {file.filename} ({result.get('word_count', 0)} words, {result.get('content_length', 0)} chars)")
         else:
             logger.warning(f"⚠️ Document read failed: {result.get('error', 'Unknown error')}")
         
@@ -2652,7 +2289,7 @@ async def read_document_endpoint(
         result = read_document(file_path, save_to_memory=save_to_memory)
         
         if result["success"]:
-            logger.info(f"📄 Document read: {file_path}")
+            logger.info(f"Document read: {file_path}")
         
         return result
         
@@ -2813,7 +2450,7 @@ JARVIS_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__
 graphs_dir = os.path.join(JARVIS_ROOT, "graphs")
 os.makedirs(graphs_dir, exist_ok=True)
 app.mount("/graphs", StaticFiles(directory=graphs_dir), name="graphs")
-logger.info(f"📊 Graphs directory: {graphs_dir}")
+logger.info(f"Graphs directory: {graphs_dir}")
 
 @app.get("/api/graphs/list")
 async def list_graphs():
@@ -3781,6 +3418,14 @@ async def real_reddit(subreddit: str = "technology", limit: int = 5):
     return api_client.reddit_posts(subreddit, limit)
 
 # ═══════════════════════════════════════════════════════════════
+
+try:
+    from jarvis.api_routes import register_personal_os_routes
+
+    register_personal_os_routes(app)
+    logger.info("Personal AI OS routes registered under /api/os")
+except Exception as exc:
+    logger.warning(f"Personal AI OS routes unavailable: {exc}")
 
 if __name__ == "__main__":
     print("🚀 Starting JARVIS Ultimate...")

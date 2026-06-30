@@ -3,11 +3,19 @@ export type Mode = 'text' | 'speech';
 export interface MessageAction {
   type: string;
   app?: string;
+  id?: string | number;
+  file_name?: string;
+  filename?: string;
+  expression?: string;
   path?: string;
+  result?: string | number;
   url?: string;
   query?: string;
   action?: string;
+  author?: string;
+  word_count?: number;
   data?: any;
+  [key: string]: any;
 }
 
 export interface MessageActions {

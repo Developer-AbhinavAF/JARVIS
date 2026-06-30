@@ -177,6 +177,30 @@ class JarvisMemory:
             logger.exception("Failed to get conversations")
             return []
 
+    def search_conversations(self, query: str = "", limit: int = 50) -> list[dict[str, Any]]:
+        """Search conversation summaries."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                if query:
+                    pattern = f"%{query}%"
+                    cursor.execute(
+                        """SELECT * FROM conversations
+                           WHERE summary LIKE ? OR topics LIKE ?
+                           ORDER BY timestamp DESC LIMIT ?""",
+                        (pattern, pattern, limit),
+                    )
+                else:
+                    cursor.execute(
+                        "SELECT * FROM conversations ORDER BY timestamp DESC LIMIT ?",
+                        (limit,),
+                    )
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception:
+            logger.exception("Failed to search conversations")
+            return []
+
     def save_preference(self, key: str, value: str, category: str = "general") -> bool:
         """Save a user preference.
         
@@ -281,6 +305,18 @@ class JarvisMemory:
             logger.exception("Failed to complete todo")
             return "Failed to complete task."
 
+    def delete_todo(self, task_id: int | str) -> bool:
+        """Delete a to-do item."""
+        try:
+            with self._lock, sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM todos WHERE id = ?", (task_id,))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception:
+            logger.exception("Failed to delete todo")
+            return False
+
     def add_reminder(self, message: str, remind_time: str, repeat: str | None = None) -> str:
         """Add a reminder.
         
@@ -335,6 +371,24 @@ class JarvisMemory:
             logger.exception("Failed to check reminders")
             return []
 
+    def get_reminders(self, include_triggered: bool = True, limit: int = 50) -> list[dict[str, Any]]:
+        """Get reminders."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                if include_triggered:
+                    cursor.execute("SELECT * FROM reminders ORDER BY remind_time DESC LIMIT ?", (limit,))
+                else:
+                    cursor.execute(
+                        "SELECT * FROM reminders WHERE triggered = 0 ORDER BY remind_time ASC LIMIT ?",
+                        (limit,),
+                    )
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception:
+            logger.exception("Failed to get reminders")
+            return []
+
     def _calculate_next_reminder(self, remind_time: str, repeat: str) -> str:
         """Calculate next occurrence for repeating reminders."""
         dt = datetime.fromisoformat(remind_time)
@@ -383,6 +437,60 @@ class JarvisMemory:
         except Exception:
             logger.exception("Failed to search notes")
             return []
+
+    def get_notes(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Get recent notes."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM notes ORDER BY created DESC LIMIT ?", (limit,))
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception:
+            logger.exception("Failed to get notes")
+            return []
+
+    def update_note(self, note_id: int | str, title: str | None = None, content: str | None = None, category: str | None = None) -> bool:
+        """Update a note."""
+        updates = []
+        values: list[Any] = []
+        if title is not None:
+            updates.append("title = ?")
+            values.append(title)
+        if content is not None:
+            updates.append("content = ?")
+            values.append(content)
+        if category is not None:
+            updates.append("category = ?")
+            values.append(category)
+        if not updates:
+            return False
+        values.append(note_id)
+        try:
+            with self._lock, sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"UPDATE notes SET {', '.join(updates)} WHERE id = ?", values)
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception:
+            logger.exception("Failed to update note")
+            return False
+
+    def delete_note(self, note_id: int | str) -> bool:
+        """Delete a note."""
+        try:
+            with self._lock, sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM notes WHERE id = ?", (note_id,))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception:
+            logger.exception("Failed to delete note")
+            return False
+
+    def get_sessions(self) -> list[dict[str, Any]]:
+        """Compatibility hook for desktop UI session listing."""
+        return []
 
     def add_important_date(self, event: str, date: str, recurring: bool = False, category: str = "general") -> str:
         """Add an important date.

@@ -19,6 +19,9 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Back
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+
+print("JARVIS_API PID =", os.getpid())
+print("JARVIS_API IMPORTED")
 # Configure logging first
 logging.basicConfig(
     level=logging.INFO,
@@ -249,7 +252,6 @@ class JarvisDesktopCore:
     async def _execute_single_task(self, query: str, session_id: str) -> Dict[str, Any]:
         """Execute a single task"""
         q = query.strip().lower()
-        actions = []
         
         # Check built-in commands first
         builtin_result = await self._handle_builtin_command(q)
@@ -259,27 +261,19 @@ class JarvisDesktopCore:
         # Use LLM for complex queries
         try:
             response = self.llm.chat(query)
-            
-            # Check if response contains tool calls
-            if isinstance(response, dict) and "tool_calls" in response:
-                for tool_call in response.get("tool_calls", []):
-                    tool_name = tool_call.get("name")
-                    tool_params = tool_call.get("parameters", {})
-                    
-                    if tool_name in self.tools:
-                        try:
-                            result = self.tools[tool_name](**tool_params)
-                            actions.append({
-                                "tool": tool_name,
-                                "params": tool_params,
-                                "result": str(result)[:200]
-                            })
-                        except Exception as e:
-                            logger.error(f"Tool {tool_name} failed: {e}")
-            
+            if isinstance(response, dict):
+                response_text = response.get("text") or response.get("response") or ""
+                response_actions = response.get("actions", [])
+                if not isinstance(response_actions, list):
+                    response_actions = [response_actions]
+                return {
+                    "text": response_text,
+                    "actions": response_actions,
+                }
+
             return {
-                "text": response.get("text", str(response)) if isinstance(response, dict) else str(response),
-                "actions": actions
+                "text": str(response),
+                "actions": []
             }
         except Exception as e:
             logger.error(f"LLM error: {e}")
