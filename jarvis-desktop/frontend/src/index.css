@@ -288,3 +288,38 @@ body {
 .speaking-wave:nth-child(2) { animation-delay: 0.1s; }
 .speaking-wave:nth-child(3) { animation-delay: 0.2s; }
 .speaking-wave:nth-child(4) { animation-delay: 0.3s; }
+
+/* Performance: GPU acceleration for animated elements */
+.gpu-accelerated {
+  will-change: transform, opacity;
+  transform: translateZ(0);
+}
+
+/* Performance: contain layout for isolated sections */
+.contain-layout {
+  contain: layout style;
+}
+
+/* Performance: chat scroll container */
+.chat-scroll-container {
+  will-change: scroll-position;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Performance: message bubbles */
+.message-bubble {
+  contain: layout style;
+  will-change: transform, opacity;
+}
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

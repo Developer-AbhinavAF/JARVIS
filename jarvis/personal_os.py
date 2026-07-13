@@ -7,15 +7,18 @@ Tool > Memory > RAG > LLM.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from jarvis import config
 from jarvis.agents import AgentSpec, select_agent
+from jarvis.intent_classifier import IntentType, classify_intent
 from jarvis.memory_os import os_memory
 from jarvis.nlp_pipeline import NLPResult, nlp_pipeline
 from jarvis.rag import RAGContext, rag_builder
+from jarvis.task_manager import submit_background_task
 from jarvis.tool_system import (
     ToolResult,
     build_default_registry,
@@ -101,6 +104,12 @@ class PersonalAIOS:
             return memory_only
 
         t2 = time.time()
+        background_response = self._maybe_handle_background_task(message, nlp, agent, allow_sensitive_tools)
+        if background_response:
+            self._remember_turn_async(session_id, message, background_response.text, nlp, mode="background_task")
+            _tm("total", t0)
+            return background_response
+
         route = self.router.route(message, nlp)
         _tm("route", t2)
         if route and route.confidence >= 0.78:
@@ -184,6 +193,75 @@ class PersonalAIOS:
             memories=[asdict(record)],
             suggestions=self._suggestions(agent),
         )
+
+    def _extract_first_url(self, text: str) -> str | None:
+        match = re.search(r"https?://[\w\-./?=&%#]+", text)
+        return match.group(0) if match else None
+
+    def _maybe_handle_background_task(
+        self,
+        message: str,
+        nlp: NLPResult,
+        agent: AgentSpec,
+        allow_sensitive_tools: bool,
+    ) -> OSResponse | None:
+        intent = classify_intent(message)
+        url = intent.extracted_data.get("url") or self._extract_first_url(message)
+
+        if intent.intent == IntentType.YOUTUBE_LEARN and url:
+            from jarvis.youtube_learner import youtube_learner, init_youtube_learner
+            try:
+                if not youtube_learner:
+                    from jarvis.router import get_router
+                    init_youtube_learner(memory=self.memory, router_client=get_router())
+                description = f"Learn from YouTube video: {url}"
+                task_id, response_text = submit_background_task(
+                    "youtube_learn",
+                    description,
+                    youtube_learner.learn_from_video,
+                    url,
+                    True,
+                )
+                return OSResponse(
+                    text=response_text,
+                    mode="background_task",
+                    agent=agent.name,
+                    intent=nlp.intent,
+                    confidence=nlp.confidence,
+                    actions=[{"type": "task", "task_id": task_id, "task_type": "youtube_learn", "description": description}],
+                )
+            except Exception as exc:
+                logger.exception("Background YouTube task failed to start")
+                return OSResponse(
+                    text=f"Could not start background learning task: {exc}",
+                    mode="background_task_error",
+                    agent=agent.name,
+                    intent=nlp.intent,
+                    confidence=nlp.confidence,
+                )
+
+        if intent.intent == IntentType.MULTITASK or "run in background" in message.lower():
+            route = self.router.route(message, nlp)
+            if route and route.confidence >= 0.78:
+                description = f"Background task: {route.tool_name}"
+                task_id, response_text = submit_background_task(
+                    route.tool_name,
+                    description,
+                    self.executor.execute,
+                    route.tool_name,
+                    route.arguments,
+                    allow_sensitive=allow_sensitive_tools,
+                )
+                return OSResponse(
+                    text=response_text,
+                    mode="background_task",
+                    agent=agent.name,
+                    intent=nlp.intent,
+                    confidence=nlp.confidence,
+                    actions=[{"type": "task", "task_id": task_id, "task_type": route.tool_name, "description": description}],
+                )
+
+        return None
 
     def _execute_tool_route(
         self,

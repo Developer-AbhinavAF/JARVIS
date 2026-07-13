@@ -2,13 +2,10 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 from typing import Any, Generator
 
 from jarvis import config
-from jarvis.llm_service import timing_mark, timing_report, timing_reset
-from jarvis.providers import LLMManager, get_default_manager
-from jarvis.providers.exceptions import AllProvidersExhaustedError
+from jarvis.router_service import router_client, timing_mark, timing_report, timing_reset
 
 logger = logging.getLogger(__name__)
 
@@ -23,12 +20,16 @@ Rules:
 
 
 class JarvisLLM:
-    """JARVIS LLM facade with intelligent provider fallback."""
+    """JARVIS LLM facade — all requests go through the AI Router."""
 
-    def __init__(self, manager: LLMManager | None = None) -> None:
-        self.manager = manager or get_default_manager()
+    def __init__(self) -> None:
+        self.client = router_client
         self.history: list[dict[str, str]] = []
-        logger.info("JarvisLLM initialized with provider chain")
+        logger.info("JarvisLLM initialized — all AI routed through multi-provider router")
+
+    @property
+    def manager(self):
+        return self
 
     def is_available(self) -> bool:
         return True
@@ -75,6 +76,7 @@ class JarvisLLM:
 
         try:
             from jarvis.action_router import parse_action_line
+
             actions = []
             for line in action_lines[:2]:
                 action = parse_action_line(line)
@@ -92,18 +94,20 @@ class JarvisLLM:
         self,
         message: str,
         context: list[dict[str, str]] | None = None,
-        max_tokens: int = 48,
+        max_tokens: int | None = None,
     ) -> str | dict[str, Any]:
-        """Fast non-streaming chat. Returns complete response."""
         timing_reset()
 
+        import time
         t0 = time.time()
         messages = self._build_messages(message, context)
         timing_mark("prompt_build", t0)
 
         try:
             t1 = time.time()
-            response_text = self.manager.generate(
+            if max_tokens is None:
+                max_tokens = config.LLM_MAX_TOKENS
+            response_text = self.client.chat(
                 messages,
                 max_tokens=max_tokens,
                 temperature=config.LLM_TEMPERATURE,
@@ -124,8 +128,6 @@ class JarvisLLM:
 
             logger.info(timing_report())
             return result
-        except AllProvidersExhaustedError:
-            raise
         except Exception as exc:
             logger.exception("Chat error")
             raise
@@ -134,14 +136,15 @@ class JarvisLLM:
         self,
         message: str,
         context: list[dict[str, str]] | None = None,
-        max_tokens: int = 48,
+        max_tokens: int | None = None,
     ) -> Generator[str, None, None]:
-        """Streaming chat with auto-failover. Yields text tokens as they arrive."""
         messages = self._build_messages(message, context)
         collected: list[str] = []
 
         try:
-            for token in self.manager.stream(
+            if max_tokens is None:
+                max_tokens = config.LLM_MAX_TOKENS
+            for token in self.client.chat_stream(
                 messages,
                 max_tokens=max_tokens,
                 temperature=config.LLM_TEMPERATURE,
@@ -161,6 +164,7 @@ class JarvisLLM:
 
     def quick_response(self, prompt: str, max_tokens: int = 16) -> str:
         timing_reset()
+        import time
         t0 = time.time()
         messages = [
             {"role": "system", "content": "You are JARVIS. Be concise."},
@@ -168,7 +172,7 @@ class JarvisLLM:
         ]
         timing_mark("prompt_build", t0)
         t1 = time.time()
-        response = self.manager.generate(messages, max_tokens=max_tokens, temperature=0.3)
+        response = self.client.chat(messages, max_tokens=max_tokens, temperature=0.3)
         timing_mark("llm_request", t1)
         result = response if isinstance(response, str) else "".join(response)
         logger.info(timing_report())
@@ -179,7 +183,7 @@ class JarvisLLM:
             {"role": "system", "content": "Return valid JSON only."},
             {"role": "user", "content": prompt},
         ]
-        text = self.manager.generate(
+        text = self.client.chat(
             messages,
             max_tokens=max_tokens,
             temperature=0.2,
@@ -189,7 +193,6 @@ class JarvisLLM:
         return json.loads(raw)
 
 
-# Global singleton instance
 _default_llm: JarvisLLM | None = None
 
 

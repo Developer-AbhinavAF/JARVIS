@@ -1,9 +1,3 @@
-"""Centralized LLM provider service for JARVIS.
-
-Fast-path version: uses native Ollama API directly, no OpenAI client overhead,
-no slow health checks on every call, minimal retries, low context windows.
-"""
-
 from __future__ import annotations
 
 import json
@@ -15,12 +9,13 @@ from typing import Any, Iterable
 import requests
 
 from jarvis import config
+from jarvis.router_service import router_client
 
 logger = logging.getLogger(__name__)
 
 
 class LLMServiceUnavailable(RuntimeError):
-    """Raised when the configured local LLM service cannot be reached."""
+    """Raised when the AI Router service cannot be reached."""
 
 
 @dataclass
@@ -41,7 +36,6 @@ class LLMResult:
     tokens_used: int = 0
 
 
-# Per-request timing accumulator (thread-local to be safe in async contexts)
 _timings: dict[str, float] = {}
 
 
@@ -62,9 +56,9 @@ def timing_report() -> str:
 
 
 class LLMService:
-    """Provider-neutral LLM facade using native Ollama API."""
+    """Provider-neutral LLM facade — all AI routed through multi-provider router."""
 
-    provider_name = "ollama"
+    provider_name = "router"
 
     def __init__(
         self,
@@ -72,25 +66,20 @@ class LLMService:
         model: str | None = None,
         timeout: float | None = None,
     ) -> None:
-        self.base_url = (base_url or config.OLLAMA_BASE_URL).rstrip("/")
-        self.model = model or config.OLLAMA_MODEL
-        self.timeout = timeout or config.OLLAMA_TIMEOUT_SECONDS
+        self.base_url = base_url or ""
+        self.model = model or config.AI_MODEL
+        self.timeout = timeout or config.AI_TIMEOUT
         self._last_health: LLMHealth | None = None
         self._health_ttl = 30.0
-        # Reusable session for connection pooling
         self._session = requests.Session()
-        # Set default timeout per-request so it doesn't hang
         self._session.headers.update({"Content-Type": "application/json"})
+        api_key = getattr(config, 'AI_API_KEY', '')
+        if api_key:
+            self._session.headers.update({"Authorization": f"Bearer {api_key}"})
 
     @property
     def client(self) -> Any:
-        """Minimal client stub - we use native API directly."""
-        return object()
-
-    def _native_ollama_base(self) -> str:
-        if self.base_url.endswith("/v1"):
-            return self.base_url[:-3]
-        return self.base_url
+        return router_client
 
     def _prepare_messages(self, messages: list[dict[str, str]]) -> list[dict[str, str]]:
         if not messages:
@@ -126,29 +115,10 @@ class LLMService:
         return prepared or messages[-1:]
 
     def health_check(self) -> LLMHealth:
-        """Fast health check - cached for 30s, short timeout."""
-        now = time.time()
-        if self._last_health and (now - self._last_health.latency_ms / 1000) < self._health_ttl:
-            return self._last_health
-
-        start = time.time()
-        url = f"{self._native_ollama_base()}/api/tags"
-        try:
-            resp = self._session.get(url, timeout=3)
-            latency = (time.time() - start) * 1000
-            if resp.status_code != 200:
-                health = LLMHealth(available=False, message=f"HTTP {resp.status_code}", base_url=self.base_url, model=self.model, latency_ms=latency)
-            else:
-                health = LLMHealth(available=True, message="ok", base_url=self.base_url, model=self.model, latency_ms=latency)
-            self._last_health = health
-            return health
-        except requests.RequestException as exc:
-            health = LLMHealth(available=False, message=str(exc), base_url=self.base_url, model=self.model, latency_ms=(time.time() - start) * 1000)
-            self._last_health = health
-            return health
+        return LLMHealth(available=True, message="ok", base_url=self.base_url, model=self.model, latency_ms=0)
 
     def is_available(self) -> bool:
-        return self.health_check().available
+        return True
 
     def generate(
         self,
@@ -175,39 +145,28 @@ class LLMService:
         response_format: dict[str, Any] | None = None,
     ) -> LLMResult:
         selected_model = model or self.model
-        token_limit = max(8, min(max_tokens or config.LLM_MAX_TOKENS, 48))
-        num_ctx = max(512, min(config.OLLAMA_NUM_CTX, 2048))
-
+        token_limit = max(8, min(max_tokens or config.LLM_MAX_TOKENS, 256000))
         prepared = self._prepare_messages(messages)
-
-        payload: dict[str, Any] = {
-            "model": selected_model,
-            "messages": prepared,
-            "stream": False,
-            "options": {
-                "num_ctx": num_ctx,
-                "num_batch": config.OLLAMA_NUM_BATCH,
-                "num_predict": token_limit,
-                "temperature": temperature if temperature is not None else config.LLM_TEMPERATURE,
-            },
-            "keep_alive": -1,
-        }
-        if response_format:
-            payload["format"] = response_format
-
-        url = f"{self._native_ollama_base()}/api/chat"
 
         try:
             start = time.time()
-            resp = self._session.post(url, json=payload, timeout=self.timeout)
-            resp.raise_for_status()
-            data = resp.json()
+            text = router_client.chat(
+                prepared,
+                model=selected_model or None,
+                max_tokens=token_limit,
+                temperature=temperature if temperature is not None else config.LLM_TEMPERATURE,
+                response_format=response_format,
+            )
             latency = (time.time() - start) * 1000
-            text = data.get("message", {}).get("content", "")
             timing_mark("token_gen", start)
-            return LLMResult(text=text, model=selected_model, provider=self.provider_name, latency_ms=latency)
+            return LLMResult(
+                text=text,
+                model=selected_model or "router-default",
+                provider=self.provider_name,
+                latency_ms=latency,
+            )
         except Exception as exc:
-            raise LLMServiceUnavailable(f"Ollama generation failed: {exc}") from exc
+            raise LLMServiceUnavailable(f"Router generation failed: {exc}") from exc
 
     def stream(
         self,
@@ -219,43 +178,20 @@ class LLMService:
         response_format: dict[str, Any] | None = None,
     ) -> Iterable[str]:
         selected_model = model or self.model
-        token_limit = max(8, min(max_tokens or config.LLM_MAX_TOKENS, 48))
-        num_ctx = max(512, min(config.OLLAMA_NUM_CTX, 2048))
-
-        url = f"{self._native_ollama_base()}/api/chat"
+        token_limit = max(8, min(max_tokens or config.LLM_MAX_TOKENS, 256000))
         prepared = self._prepare_messages(messages)
 
-        payload: dict[str, Any] = {
-            "model": selected_model,
-            "messages": prepared,
-            "stream": True,
-            "options": {
-                "num_ctx": num_ctx,
-                "num_batch": config.OLLAMA_NUM_BATCH,
-                "num_predict": token_limit,
-                "temperature": temperature if temperature is not None else config.LLM_TEMPERATURE,
-            },
-            "keep_alive": -1,
-        }
-        if response_format:
-            payload["format"] = response_format
-
         try:
-            with self._session.post(url, json=payload, stream=True, timeout=self.timeout) as resp:
-                resp.raise_for_status()
-                for line in resp.iter_lines():
-                    if line:
-                        try:
-                            chunk = json.loads(line)
-                            content = chunk.get("message", {}).get("content", "")
-                            if content:
-                                yield content
-                            if chunk.get("done"):
-                                break
-                        except json.JSONDecodeError:
-                            continue
+            for token in router_client.chat_stream(
+                prepared,
+                model=selected_model or None,
+                max_tokens=token_limit,
+                temperature=temperature if temperature is not None else config.LLM_TEMPERATURE,
+                response_format=response_format,
+            ):
+                yield token
         except Exception as exc:
-            raise LLMServiceUnavailable(f"Ollama streaming failed: {exc}") from exc
+            raise LLMServiceUnavailable(f"Router streaming failed: {exc}") from exc
 
 
 llm_service = LLMService()

@@ -177,6 +177,25 @@ function MarkdownContent({ content }: { content: string }) {
       continue;
     }
 
+    // Image detection: standalone image URL or "Image: <url>" line
+    const imageMatch = trimmed.match(/^(?:image:\s*)?(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp|svg|bmp|tiff)(?:\?[^\s]*)?)$/i);
+    if (imageMatch) {
+      const imgUrl = imageMatch[1];
+      elements.push(
+        <div key={key++} className="my-3">
+          <a href={imgUrl} target="_blank" rel="noopener noreferrer">
+            <img
+              src={imgUrl}
+              alt="Generated image"
+              className="max-w-full max-h-96 rounded-lg border border-white/10 object-contain cursor-pointer hover:opacity-90 transition-opacity"
+              loading="lazy"
+            />
+          </a>
+        </div>
+      );
+      continue;
+    }
+
     if (trimmed) {
       elements.push(
         <p key={key++} className="text-jarvis-text">

@@ -4,7 +4,6 @@ import Sidebar from '@/components/Sidebar';
 import TopBar from '@/components/TopBar';
 import ChatPanel from '@/components/ChatPanel';
 import RightPanel from '@/components/RightPanel';
-import BottomBar from '@/components/BottomBar';
 import DashboardSection from '@/components/DashboardSection';
 import PCControlSection from '@/components/PCControlSection';
 import MemorySection from '@/components/MemorySection';
@@ -19,6 +18,7 @@ import AppErrorBoundary from '@/components/AppErrorBoundary';
 import { useStore } from '@/store/useStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
+import { useChatShortcuts } from '@/hooks/useChatShortcuts';
 import { Mic, MicOff, Send } from 'lucide-react';
 
 function App() {
@@ -29,14 +29,15 @@ function App() {
   
   // Auto-hide states - start collapsed by default
   const sidebarCollapsed = true;
-  const bottomBarCollapsed = true;
   const [isHoveringSidebar, setIsHoveringSidebar] = useState(false);
   const [isHoveringRightPanel, setIsHoveringRightPanel] = useState(false);
-  const [isHoveringBottomBar, setIsHoveringBottomBar] = useState(false);
   const { lastMessage, isConnected } = useWebSocket('ws://localhost:8001/ws');
   const { isListening: speechListening, transcript, interimTranscript, startListening, stopListening, resetTranscript, isSupported, error: speechError } = useSpeechRecognition();
   const [isSpeaking, setIsSpeaking] = useState(false);
   const lastProcessedTranscript = useRef('');
+
+  // Keyboard shortcuts for chat formatting
+  useChatShortcuts();
 
   // Text-to-speech function
   const speakText = useCallback((text: string) => {
@@ -266,7 +267,6 @@ function App() {
   };
 
   const isAssistantView = activeTab === 'assistant';
-  const isHomeView = activeTab === 'home';
   // All views now support expand/collapse like dashboard
   const rightPanelMode = isAssistantView ? chatExpandMode : 'normal';
   const rightPanelHidden = rightPanelMode === 'full';
@@ -293,7 +293,6 @@ function App() {
         preload="metadata"
         disablePictureInPicture
         disableRemotePlayback
-        decoding="async"
         className="absolute inset-0 w-full h-full object-cover z-0"
         style={{ opacity: 0.25, transform: 'translateZ(0)' }}
       >
@@ -457,25 +456,6 @@ function App() {
             </div>
           </motion.div>
         </div>
-
-        <motion.div
-          className="relative z-40"
-          onMouseEnter={() => setIsHoveringBottomBar(true)}
-          onMouseLeave={() => setIsHoveringBottomBar(false)}
-            animate={{ 
-              height: bottomBarCollapsed && !isHoveringBottomBar ? '40px' : '72px',
-            }}
-            transition={{ 
-              type: 'spring', 
-              stiffness: 400, 
-              damping: 30,
-              mass: 0.8
-            }}
-          >
-            <div className="h-full">
-              <BottomBar collapsed={bottomBarCollapsed && !isHoveringBottomBar} />
-            </div>
-          </motion.div>
       </div>
       </motion.div>
           </AppErrorBoundary>

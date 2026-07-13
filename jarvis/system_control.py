@@ -503,31 +503,33 @@ def system_power(action: str) -> str:
     if not IS_WINDOWS:
         return "System power control only supported on Windows currently."
 
+    _NO_WINDOW = subprocess.CREATE_NO_WINDOW
+
     try:
         action = action.lower().strip()
 
         if action == "shutdown":
-            subprocess.Popen("shutdown /s /t 60", shell=True)
+            subprocess.Popen("shutdown /s /t 60", shell=True, creationflags=_NO_WINDOW)
             return "System will shutdown in 60 seconds. Say 'cancel shutdown' to abort."
 
         elif action == "restart":
-            subprocess.Popen("shutdown /r /t 60", shell=True)
+            subprocess.Popen("shutdown /r /t 60", shell=True, creationflags=_NO_WINDOW)
             return "System will restart in 60 seconds. Say 'cancel shutdown' to abort."
 
         elif action == "sleep":
-            subprocess.run("rundll32.exe powrprof.dll,SetSuspendState 0,1,0", shell=True, check=False)
+            subprocess.run("rundll32.exe powrprof.dll,SetSuspendState 0,1,0", shell=True, check=False, creationflags=_NO_WINDOW)
             return "System going to sleep."
 
         elif action == "lock":
-            subprocess.run("rundll32.exe user32.dll,LockWorkStation", shell=True, check=False)
+            subprocess.run("rundll32.exe user32.dll,LockWorkStation", shell=True, check=False, creationflags=_NO_WINDOW)
             return "Workstation locked."
 
         elif action == "logout":
-            subprocess.run("shutdown /l", shell=True, check=False)
+            subprocess.run("shutdown /l", shell=True, check=False, creationflags=_NO_WINDOW)
             return "Logging out."
 
         elif action == "cancel":
-            subprocess.run("shutdown /a", shell=True, check=False)
+            subprocess.run("shutdown /a", shell=True, check=False, creationflags=_NO_WINDOW)
             return "Shutdown/restart aborted."
 
         else:

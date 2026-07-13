@@ -118,13 +118,13 @@ def register_personal_os_routes(app) -> None:
                 "Typed tool registry, router, executor, permissions, monitoring, analytics",
                 "SQLite memory spine with optional Chroma learning memory",
                 "RAG context builder with strict character budgets",
-                "Lazy LLM fallback optimized for Ollama Llama 3.2 3B",
+                "LLM through AI Router v3.0 (multi-provider)",
                 "Specialized agents selected by intent and domain",
             ],
             "hardware_target": {
                 "cpu": "Intel i5 6th Gen",
                 "ram": "8GB",
                 "os": "Windows",
-                "local_model": "Ollama Llama 3.2 3B",
+                "ai_router": "AI Router v3.0",
             },
         }

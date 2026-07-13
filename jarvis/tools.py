@@ -13,6 +13,7 @@ import logging
 import os
 import platform
 import subprocess
+import sys
 import threading
 import webbrowser
 import time
@@ -135,6 +136,56 @@ def web_search(query: str) -> str:
         return "Web search failed. Please check your internet connection or try again later."
 
 
+def search_on_platform(query: str, platform: str = "") -> str:
+    """Search on a specific platform (YouTube, GitHub, Wikipedia, etc.).
+
+    Args:
+        query: Search query.
+        platform: Platform name (youtube, github, wikipedia, reddit, etc.)
+    """
+    query = (query or "").strip()
+    platform = (platform or "").strip().lower()
+
+    if not query:
+        return "No search query provided."
+
+    platform_urls = {
+        "youtube": "https://www.youtube.com/results?search_query=",
+        "github": "https://github.com/search?q=",
+        "wikipedia": "https://en.wikipedia.org/w/index.php?search=",
+        "reddit": "https://www.reddit.com/search/?q=",
+        "stackoverflow": "https://stackoverflow.com/search?q=",
+        "stack overflow": "https://stackoverflow.com/search?q=",
+        "amazon": "https://www.amazon.com/s?k=",
+        "google": "https://www.google.com/search?q=",
+        "bing": "https://www.bing.com/search?q=",
+        "twitter": "https://twitter.com/search?q=",
+        "x": "https://twitter.com/search?q=",
+        "linkedin": "https://www.linkedin.com/search/results/all/?keywords=",
+        "medium": "https://medium.com/search?q=",
+        "imdb": "https://www.imdb.com/find?q=",
+        "spotify": "https://open.spotify.com/search/",
+        "pinterest": "https://www.pinterest.com/search/pins/?q=",
+        "ebay": "https://www.ebay.com/sch/i.html?_nkw=",
+        "npm": "https://www.npmjs.com/search?q=",
+        "pypi": "https://pypi.org/search/?q=",
+        "leetcode": "https://leetcode.com/problemset/all/?search=",
+        "replit": "https://replit.com/search?q=",
+    }
+
+    if platform in platform_urls:
+        encoded = requests.utils.quote(query)
+        url = platform_urls[platform] + encoded
+        try:
+            webbrowser.open(url)
+            return f"Searching {platform} for: {query}"
+        except Exception:
+            return f"Failed to open {platform}. Link: {url}"
+
+    # Fallback: search the web with site:platform
+    return web_search(f"{query} site:{platform}")
+
+
 def plot_chart(chart_type: str, title: str, labels: list[str], values: list[float], save_path: str = None) -> str:
     """Create a chart and save to file for frontend display.
     
@@ -208,12 +259,21 @@ def plot_chart(chart_type: str, title: str, labels: list[str], values: list[floa
         return f"Chart error: {str(e)}"
 
 
-def open_app(target: str) -> str:
+def open_app(target: str, url: str = "") -> str:
     """Open a URL or a known application target."""
 
     target = (target or "").strip()
-    if not target:
+    if not target and not url:
         return "No target provided."
+
+    # If URL is explicitly provided (from open_website tool), open it directly
+    if url:
+        try:
+            webbrowser.open(url)
+            return f"Opening {target}."
+        except Exception:
+            logger.exception("Failed to open URL: %s", url)
+            return f"Failed to open {target}."
 
     system = platform.system().lower()
 
@@ -314,7 +374,8 @@ def open_app(target: str) -> str:
                 # Try to run the command
                 # Use shell=False for .exe files (security), shell=True for commands
                 use_shell = not expanded_cmd.endswith('.exe') and '.' not in os.path.basename(expanded_cmd)
-                subprocess.Popen(expanded_cmd, shell=use_shell)
+                creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+                subprocess.Popen(expanded_cmd, shell=use_shell, creationflags=creation_flags)
                 return f"Opening {target}."
             except Exception as e:
                 logger.debug("Failed to open %s with %s: %s", target, expanded_cmd, str(e))
@@ -323,7 +384,8 @@ def open_app(target: str) -> str:
         # If all direct attempts failed, try Windows 'start' command
         if system.startswith("windows"):
             try:
-                subprocess.Popen(f"start {target}", shell=True)
+                creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+                subprocess.Popen(f"start {target}", shell=True, creationflags=creation_flags)
                 return f"Opening {target}."
             except Exception:
                 logger.exception("Failed to start app: %s", target)
@@ -342,8 +404,8 @@ def open_app(target: str) -> str:
     # Final fallback: use Windows start command or xdg-open
     try:
         if system.startswith("windows"):
-            # Use 'start' command for better app discovery
-            subprocess.Popen(f"start \"{target}\"", shell=True)
+            creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            subprocess.Popen(f"start \"{target}\"", shell=True, creationflags=creation_flags)
         else:
             subprocess.Popen(["xdg-open", target])
         return f"Opening {target}."
@@ -683,6 +745,35 @@ def play_youtube(query: str) -> str:
             return f"Failed to play video. Try searching manually: https://youtube.com/results?search_query={requests.utils.quote(query)}"
 
 
+def read_document(file_path: str = "") -> str:
+    """Read a document file and return its content.
+
+    Args:
+        file_path: Path to the file to read.
+    """
+    file_path = (file_path or "").strip()
+    if not file_path:
+        return "No file path provided."
+
+    if not os.path.exists(file_path):
+        return f"File not found: {file_path}"
+
+    try:
+        ext = os.path.splitext(file_path)[1].lower()
+        text_extensions = {".txt", ".md", ".py", ".js", ".html", ".css", ".json", ".xml", ".csv", ".log", ".ini", ".cfg", ".yml", ".yaml"}
+        
+        if ext in text_extensions:
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read(10000)
+            if len(content) >= 10000:
+                content += "\n... (truncated)"
+            return f"Content of {os.path.basename(file_path)}:\n{content}"
+        
+        return f"File type {ext} not supported for reading. Try opening it instead."
+    except Exception as e:
+        return f"Failed to read file: {e}"
+
+
 def play_music(query: str) -> str:
     """Play music on YouTube Music or regular YouTube.
     
@@ -805,7 +896,7 @@ def calculator(expression: str) -> str:
     """Calculate mathematical expressions.
     
     Args:
-        expression: Math expression like "2 + 2", "10 * 5", "sqrt(16)"
+        expression: Math expression like "2 + 2", "10 * 5", "sqrt(16)", "multiply 5 by 3"
     """
     import math
     import re
@@ -814,8 +905,50 @@ def calculator(expression: str) -> str:
     if not expression:
         return "No expression provided."
     
+    # Convert natural language math to mathematical expressions
+    expression = expression.lower()
+    
+    # Handle "multiply X by Y" → "X * Y"
+    m = re.match(r'multiply\s+(\d+)\s+by\s+(\d+)', expression)
+    if m:
+        expression = f"{m.group(1)} * {m.group(2)}"
+    
+    # Handle "divide X by Y" → "X / Y"
+    m = re.match(r'divide\s+(\d+)\s+by\s+(\d+)', expression)
+    if m:
+        expression = f"{m.group(1)} / {m.group(2)}"
+    
+    # Handle "add X and Y" or "add X to Y" → "X + Y"
+    m = re.match(r'add\s+(\d+)\s+(?:and|to)\s+(\d+)', expression)
+    if m:
+        expression = f"{m.group(1)} + {m.group(2)}"
+    
+    # Handle "subtract X from Y" → "Y - X" (note: "subtract X from Y" means Y minus X)
+    m = re.match(r'subtract\s+(\d+)\s+from\s+(\d+)', expression)
+    if m:
+        expression = f"{m.group(2)} - {m.group(1)}"
+    
+    # Handle "subtract X minus Y" or "X minus Y" → "X - Y"
+    m = re.match(r'(?:subtract\s+)?(\d+)\s+minus\s+(\d+)', expression)
+    if m:
+        expression = f"{m.group(1)} - {m.group(2)}"
+    
+    # Handle "X plus Y" → "X + Y"
+    m = re.match(r'(\d+)\s+plus\s+(\d+)', expression)
+    if m:
+        expression = f"{m.group(1)} + {m.group(2)}"
+    
+    # Handle "X times Y" or "X multiplied by Y" → "X * Y"
+    m = re.match(r'(\d+)\s+(?:times|multiplied\s+by)\s+(\d+)', expression)
+    if m:
+        expression = f"{m.group(1)} * {m.group(2)}"
+    
+    # Handle "X divided by Y" → "X / Y"
+    m = re.match(r'(\d+)\s+divided\s+by\s+(\d+)', expression)
+    if m:
+        expression = f"{m.group(1)} / {m.group(2)}"
+    
     # Clean the expression - only allow safe characters
-    # Remove any potentially dangerous characters
     allowed_pattern = r'^[0-9+\-*/().\s^%sincotalgpr]+$'
     if not re.match(allowed_pattern, expression.lower()):
         return "Invalid characters in expression. Only numbers and basic operators allowed."
@@ -1359,6 +1492,50 @@ TOOL_REGISTRY = {
     "exercises": exercises,
     "global_holidays": global_holidays,
 }
+
+
+def greeting(text: str = "") -> str:
+    """Handle greetings and small talk."""
+    import random
+    import datetime
+
+    text_lower = text.strip().lower()
+
+    # Time-based greetings
+    hour = datetime.datetime.now().hour
+    if 5 <= hour < 12:
+        time_greeting = "Good morning"
+    elif 12 <= hour < 17:
+        time_greeting = "Good afternoon"
+    elif 17 <= hour < 21:
+        time_greeting = "Good evening"
+    else:
+        time_greeting = "Good night"
+
+    # Greeting responses
+    greetings = {
+        "hello": [f"{time_greeting}! How can I help you?", "Hello! What can I do for you?", "Hey there! Ready to help."],
+        "hi": [f"{time_greeting}! How can I assist you?", "Hi! What's on your mind?", "Hey! How can I help?"],
+        "hey": ["Hey! What's up?", "Hey there! How can I help?", "Hey! What do you need?"],
+        "how are you": ["I'm doing great, thanks for asking! How can I help you?", "I'm well! Ready to assist you with anything.", "All good here! What can I do for you?"],
+        "who are you": ["I'm JARVIS, your AI assistant. I can help you with various tasks like opening apps, checking system status, searching the web, and more.", "I'm JARVIS - your personal AI assistant. I can control your computer, search the web, manage files, and much more!"],
+        "thanks": ["You're welcome!", "Happy to help!", "Anytime!", "No problem!"],
+        "bye": ["Goodbye! Have a great day!", "See you later! Take care!", "Bye! Feel free to come back anytime."],
+        "good morning": [f"Good morning! Hope you're having a great day. How can I help?", "Morning! What can I do for you today?"],
+        "good afternoon": ["Good afternoon! How can I assist you?", "Afternoon! What do you need?"],
+        "good evening": ["Good evening! How can I help you tonight?", "Evening! What can I do for you?"],
+    }
+
+    # Check for specific greetings
+    for key, responses in greetings.items():
+        if key in text_lower:
+            return random.choice(responses)
+
+    # Default greeting
+    return random.choice([f"{time_greeting}! How can I help you?", "Hello! How can I assist you?", "Hey! What can I do for you?"])
+
+
+TOOL_REGISTRY["greeting"] = greeting
 
 # Merge academic tools
 try:

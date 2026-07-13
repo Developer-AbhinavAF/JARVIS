@@ -257,8 +257,23 @@ class JarvisDesktopCore:
         builtin_result = await self._handle_builtin_command(q)
         if builtin_result:
             return builtin_result
+
+        # ── EXECUTION ENGINE (tool-first, LLM-last) ──
+        try:
+            from jarvis.execution_engine import ExecutionEngine
+            if not hasattr(self, '_exec_engine'):
+                self._exec_engine = ExecutionEngine()
+            result_text, handled = self._exec_engine.execute(query)
+            if handled and result_text:
+                cmd_result = self._exec_engine.command_engine.process(query)
+                actions = []
+                if cmd_result.matched:
+                    actions = [{"type": cmd_result.tool_name}]
+                return {"text": result_text, "actions": actions}
+        except Exception as e:
+            logger.error(f"ExecutionEngine error: {e}")
         
-        # Use LLM for complex queries
+        # LLM fallback
         try:
             response = self.llm.chat(query)
             if isinstance(response, dict):

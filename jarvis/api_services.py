@@ -1,10 +1,3 @@
-"""Lazy API service layer for JARVIS.
-
-Each external provider is wrapped behind a small service object. Services do
-not initialize network clients at import time, which keeps startup fast on the
-8GB target machine and makes missing API keys harmless.
-"""
-
 from __future__ import annotations
 
 import base64
@@ -16,7 +9,7 @@ from typing import Any
 try:
     import requests
 except ImportError:
-    requests = None  # type: ignore[assignment]
+    requests = None
 
 from jarvis import config
 
@@ -34,8 +27,6 @@ class APIResponse:
 
 
 class TTLCache:
-    """Tiny in-memory TTL cache for cheap repeated lookups."""
-
     def __init__(self, ttl_seconds: int | None = None, max_items: int = 256) -> None:
         self.ttl_seconds = ttl_seconds or config.API_CACHE_TTL_SECONDS
         self.max_items = max_items
@@ -143,29 +134,6 @@ class TavilyService(BaseAPIService):
                 "include_answer": True,
             },
         )
-
-
-class OpenRouterService(BaseAPIService):
-    provider = "openrouter"
-
-    def chat(self, prompt: str, model: str = "openai/gpt-4o-mini") -> APIResponse:
-        if not self.configured:
-            return self._missing_key()
-        return self._post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
-            json_body={"model": model, "messages": [{"role": "user", "content": prompt}]},
-        )
-
-
-class GeminiService(BaseAPIService):
-    provider = "gemini"
-
-    def generate(self, prompt: str, model: str = "gemini-1.5-flash") -> APIResponse:
-        if not self.configured:
-            return self._missing_key()
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.api_key}"
-        return self._post(url, json_body={"contents": [{"parts": [{"text": prompt}]}]})
 
 
 class OpenWeatherService(BaseAPIService):
@@ -335,13 +303,9 @@ class CalendarificService(BaseAPIService):
 
 
 class APIServiceHub:
-    """Central access point for all configured APIs."""
-
     def __init__(self) -> None:
         self.cache = TTLCache()
         self.tavily = TavilyService(config.TAVILY_API_KEY, cache=self.cache)
-        self.openrouter = OpenRouterService(config.OPENROUTER_API_KEY, cache=self.cache)
-        self.gemini = GeminiService(config.GEMINI_API_KEY, cache=self.cache)
         self.openweather = OpenWeatherService(config.OPENWEATHER_API_KEY, cache=self.cache)
         self.newsapi = NewsAPIService(config.NEWSAPI_KEY, cache=self.cache)
         self.alpha_vantage = AlphaVantageService(config.ALPHA_VANTAGE_KEY, cache=self.cache)
@@ -358,8 +322,6 @@ class APIServiceHub:
     def key_status(self) -> dict[str, bool]:
         return {
             "TAVILY_API_KEY": self.tavily.configured,
-            "OPENROUTER_API_KEY": self.openrouter.configured,
-            "GEMINI_API_KEY": self.gemini.configured,
             "OPENWEATHER_API_KEY": self.openweather.configured,
             "NEWSAPI_KEY": self.newsapi.configured,
             "ALPHA_VANTAGE_KEY": self.alpha_vantage.configured,

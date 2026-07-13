@@ -1,13 +1,3 @@
-"""jarvis.main
-
-Entry point and orchestrator for the JARVIS voice assistant.
-
-Flow:
-  1. Fast Path (ultra-fast, <10ms) - for common commands like "open youtube"
-  2. Tool Router (regex-based, <1ms) - for any tool-able command
-  3. LLM (slow path) - only for chat/conversation
-"""
-
 from __future__ import annotations
 
 import logging
@@ -23,20 +13,15 @@ from jarvis.memory import memory
 from jarvis.stt import STTEngine
 from jarvis.tts import TTSEngine
 
-from jarvis.fast_path import match_fast, is_trivial
-from jarvis.tool_router import route_input, execute_tool, ToolAction
-from jarvis.nlp_pipeline import nlp_pipeline
-from jarvis.action_router import parse_action_line
+from jarvis.execution_engine import ExecutionEngine
+from jarvis.command_engine import CommandEngine
+from jarvis.fast_path import is_trivial
 
 from jarvis.task_manager import task_manager
-from jarvis.youtube_learner import init_youtube_learner
-from jarvis.web_browser import init_web_browser
-from jarvis.shopping import init_shopping_assistant
 
 logger = logging.getLogger(__name__)
 
 
-# ── Performance timer ────────────────────────────────────
 _PERF_LOG: list[dict] = []
 
 
@@ -58,7 +43,6 @@ def _log_perf(query: str) -> None:
     _PERF_LOG.clear()
 
 
-# ── Banner and display ───────────────────────────────────
 def _print_banner() -> None:
     banner = r"""
      _   _   _   _   _   _   _   _
@@ -85,7 +69,6 @@ def _boxed_print(label: str, text: str) -> None:
     print(top)
 
 
-# ── Multi-task parsing ───────────────────────────────────
 def _parse_multi_tasks(query: str) -> list[str]:
     query = query.strip().lower()
     if not query:
@@ -158,20 +141,22 @@ def _parse_multi_tasks(query: str) -> list[str]:
     return cleaned_tasks if len(cleaned_tasks) > 1 else [query]
 
 
-# ── Core routing logic ───────────────────────────────────
+_EXECUTION_ENGINE = ExecutionEngine()
+
+_TRIVIAL: set[str] = {
+    "hello", "hi", "hey", "thanks", "thank you", "ok", "okay", "yes", "no",
+    "bye", "goodbye", "thankyou", "thx", "ty", "k", "kk", "cool", "nice",
+    "great", "awesome", "good", "fine", "hello jarvis", "hey jarvis",
+}
+
+
 def _route_and_execute(query: str, tts: TTSEngine | None, dashboard: SystemDashboard) -> tuple[str, bool]:
-    """Route query through: Fast Path → Tool Router → fallback to LLM-required.
-
-    Returns:
-        (response_text, was_handled) - if was_handled=False, caller should use LLM
-    """
     t0 = time.time()
-
     cleaned = query.strip().lower()
     if not cleaned:
         return ("", True)
 
-    # ── Meta commands (shutdown, clear, etc.) ──
+    # Meta-commands (exit, clear memory, silence)
     if any(p in cleaned for p in ["goodbye", "shut down", "shutdown", "exit", "quit"]):
         dashboard.stop_monitoring()
         if tts:
@@ -187,79 +172,33 @@ def _route_and_execute(query: str, tts: TTSEngine | None, dashboard: SystemDashb
             tts.stop()
         return ("", True)
 
-    # ── Trivial queries (hello, thanks, etc.) ──
-    if is_trivial(cleaned):
+    # Trivial greetings - skip tool execution
+    if cleaned in _TRIVIAL or is_trivial(cleaned):
         _perf("trivial", t0)
         return ("", True)
 
-    # ── Fast Path (ultra-fast, <10ms) ──
-    t1 = time.time()
-    fast = match_fast(cleaned)
-    _perf("fast_path", t1)
-    if fast:
-        _perf("fast_exec", t1)
-        result = fast.execute()
-        _log_perf(query)
-        return (result, True)
+    # NEW: Use the unified execution engine (tool-first, LLM-last)
+    def _llm_callable(q: str) -> str:
+        """Wrapper to call the LLM from the execution engine."""
+        # Import here to avoid circular imports
+        from jarvis.llm import JarvisLLM
+        # The LLM is created in main() and passed via closure
+        return _llm_instance.chat(q) if _llm_instance else "LLM not initialized."
 
-    # ── Tool Router (regex-based, <1ms) ──
-    t2 = time.time()
-    action = route_input(cleaned)
-    _perf("route_input", t2)
-    if action:
-        t3 = time.time()
-        result = execute_tool(action)
-        _perf("tool_exec", t3)
-        _log_perf(query)
-        return (result, True)
+    result, handled = _EXECUTION_ENGINE.execute(query, llm_callable=_llm_callable)
+    _log_perf(query)
+    return (result, handled)
 
-    # ── NLP pipeline (deterministic semantic fallback) ──
-    t4 = time.time()
-    nlp_result = nlp_pipeline.process(cleaned)
-    _perf("nlp", t4)
 
-    action_line = nlp_result.action
-    if action_line:
-        parsed_action = parse_action_line(action_line)
-        if parsed_action:
-            frontend_action = parsed_action.to_frontend_action()
-            if frontend_action.get("tool") == "open_app":
-                result = execute_tool(ToolAction("open app", "open_app", {"target": frontend_action["app"]}, 0.85))
-                _log_perf(query)
-                return (result, True)
-            if frontend_action.get("tool") == "web_search":
-                result = execute_tool(ToolAction("web search", "web_search", {"query": frontend_action["query"]}, 0.85))
-                _log_perf(query)
-                return (result, True)
-
-    nlp_intent_map: dict[str, tuple[str, callable]] = {
-        "system_status": ("get system stats", lambda n: ToolAction("system status", "get_system_stats", {}, n.confidence)),
-        "daily_briefing": ("daily briefing", lambda n: ToolAction("daily briefing", "get_daily_briefing", {}, n.confidence)),
-        "screenshot": ("take screenshot", lambda n: ToolAction("screenshot", "screenshot", {}, n.confidence)),
-        "calculator": ("calculator", lambda n: ToolAction("calculator", "calculator", {"expression": n.entities.get("expression", n.normalized_text)}, n.confidence)),
-        "weather": ("weather", lambda n: ToolAction("weather", "get_weather", {"city": n.entities.get("location", "Mumbai")}, n.confidence)),
-        "joke": ("joke", lambda n: ToolAction("joke", "get_joke", {}, n.confidence)),
-        "quote": ("quote", lambda n: ToolAction("quote", "get_quote", {}, n.confidence)),
-        "remember": ("remember", lambda n: ToolAction("remember", "memory_save_permanent", {"info": query.strip(), "category": "user_important"}, n.confidence)),
-    }
-
-    mapped = nlp_intent_map.get(nlp_result.intent)
-    if mapped and nlp_result.confidence >= 0.84:
-        _, builder = mapped
-        result = execute_tool(builder(nlp_result))
-        _log_perf(query)
-        return (result, True)
-
-    # ── LLM required (fallback) ──
-    return ("", False)
+# Placeholder for LLM instance (set in main())
+_llm_instance = None
 
 
 def _execute_task(query: str, tts: TTSEngine | None, llm: JarvisLLM, dashboard) -> str:
+    global _llm_instance
+    _llm_instance = llm
     result, handled = _route_and_execute(query, tts, dashboard)
-    if handled:
-        return result
-    response = llm.chat(query)
-    return response if isinstance(response, str) else response.get("text", str(response))
+    return result
 
 
 def _shutdown(tts: TTSEngine | None) -> None:
@@ -316,7 +255,6 @@ def _select_mode() -> str:
     return mode
 
 
-# ── Text interface ──────────────────────────────────────
 class SimpleChatInterface:
     def __init__(self, llm: JarvisLLM, dashboard):
         self.llm = llm
@@ -325,12 +263,14 @@ class SimpleChatInterface:
 
     def _print_chatgpt_header(self):
         os.system('cls' if os.name == 'nt' else 'clear')
-        print("\n" + "═" * 60)
+        print("\n" + "=" * 60)
         print("  JARVIS AI - Simple Chat Mode")
         print("  Type 'exit' to quit")
-        print("═" * 60 + "\n")
+        print("=" * 60 + "\n")
 
     def run(self) -> None:
+        global _llm_instance
+        _llm_instance = self.llm
         self._print_chatgpt_header()
         print("  JARVIS: Hello! I'm JARVIS, your AI assistant.\n")
         while True:
@@ -363,8 +303,9 @@ class SimpleChatInterface:
                 print(f"\n  Error: {str(e)}\n")
 
 
-# ── Voice loop ──────────────────────────────────────────
 def run_voice_loop(llm: JarvisLLM, dashboard, tts: TTSEngine | None) -> None:
+    global _llm_instance
+    _llm_instance = llm
     if not tts:
         print("  Switching to text mode...")
         text_interface = SimpleChatInterface(llm, dashboard)
@@ -396,6 +337,14 @@ def run_voice_loop(llm: JarvisLLM, dashboard, tts: TTSEngine | None) -> None:
                     _boxed_print("USER", query)
                     _boxed_print("JARVIS", response)
                     tts.speak(response)
+                else:
+                    if result == "MEMORY_CLEARED":
+                        llm.clear_history()
+                        tts.speak("Memory cleared.")
+                    elif result:
+                        _boxed_print("USER", query)
+                        _boxed_print("JARVIS", result)
+                        tts.speak(result)
             else:
                 _boxed_print("USER", query)
                 print(f"  Parsed {len(tasks)} tasks: {tasks}")
@@ -429,7 +378,6 @@ def run_voice_loop(llm: JarvisLLM, dashboard, tts: TTSEngine | None) -> None:
             time.sleep(1)
 
 
-# ── Main entry point ────────────────────────────────────
 def main() -> None:
     os.system('cls' if os.name == 'nt' else 'clear')
     log_file = "jarvis_log.txt"
@@ -474,7 +422,9 @@ def main() -> None:
         logger.exception("Failed to get daily briefing")
     llm = JarvisLLM()
     try:
-        init_youtube_learner(openai_client=llm.client, memory=memory)
+        from jarvis.router import get_router
+        _router = get_router()
+        init_youtube_learner(memory=memory, router_client=_router)
         logger.info("YouTube learner initialized")
     except Exception as e:
         logger.warning(f"YouTube learner initialization failed: {e}")
@@ -505,6 +455,14 @@ def main() -> None:
         print("  Starting simple chat mode...")
         simple_chat = SimpleChatInterface(llm, dashboard)
         simple_chat.run()
+
+
+def init_web_browser(headless: bool = True):
+    pass
+
+
+def init_shopping_assistant():
+    pass
 
 
 if __name__ == "__main__":

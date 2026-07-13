@@ -1,5 +1,3 @@
-"""Educational knowledge ingestion for JARVIS."""
-
 from __future__ import annotations
 
 import json
@@ -13,7 +11,7 @@ from typing import Any
 import requests
 from bs4 import BeautifulSoup
 
-from jarvis.llm_service import LLMServiceUnavailable, llm_service
+from jarvis.router_service import router_client
 from jarvis.memory_manager import intelligent_memory
 
 logger = logging.getLogger(__name__)
@@ -31,8 +29,6 @@ class KnowledgeUnit:
 
 
 class KnowledgeIngestionService:
-    """Extract, summarize, chunk, and store educational knowledge."""
-
     def ingest_source(self, source: str, *, source_type: str | None = None) -> KnowledgeUnit:
         source_type = source_type or self._detect_source_type(source)
         text = self._extract_text(source, source_type)
@@ -74,7 +70,6 @@ class KnowledgeIngestionService:
             return f"YouTube URL: {url}"
         try:
             from youtube_transcript_api import YouTubeTranscriptApi
-
             transcript = YouTubeTranscriptApi.get_transcript(video_id)
             return " ".join(item.get("text", "") for item in transcript)
         except Exception as exc:
@@ -91,7 +86,6 @@ class KnowledgeIngestionService:
             raise FileNotFoundError(source)
         try:
             import PyPDF2
-
             with path.open("rb") as handle:
                 reader = PyPDF2.PdfReader(handle)
                 return "\n".join(page.extract_text() or "" for page in reader.pages)
@@ -110,7 +104,7 @@ Text:
 {compact}
 """
         try:
-            raw = llm_service.generate(
+            raw = router_client.chat(
                 [
                     {"role": "system", "content": "Return valid JSON only."},
                     {"role": "user", "content": prompt},
@@ -120,7 +114,7 @@ Text:
                 response_format={"type": "json_object"},
             )
             data = json.loads(raw if isinstance(raw, str) else "".join(raw))
-        except (LLMServiceUnavailable, json.JSONDecodeError, Exception) as exc:
+        except Exception as exc:
             logger.warning("Knowledge summarization fallback used: %s", exc)
             data = self._fallback_unit(compact)
 

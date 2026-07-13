@@ -1,26 +1,19 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Send,
   Mic,
   Copy,
   Volume2,
   Trash2,
-  ExternalLink,
-  Terminal,
   AlertCircle,
   Paperclip,
   X,
   FileText,
   Maximize2,
   Minimize2,
-  Bold,
-  Italic,
-  List,
-  ListOrdered,
-  ListChecks,
-  Code2,
-  Quote,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { useChat } from '@/hooks/useApi';
@@ -78,89 +71,35 @@ function getActionLabel(action: MessageAction): string {
   if (action.type === 'volume' && action.action) {
     return `🔊 Volume ${action.action}`;
   }
-
   if (action.type === 'brightness' && action.action) {
     return `☀️ Brightness ${action.action}`;
   }
-
   if (action.type === 'calculator' && action.result !== undefined) {
     return `🧮 Result ${action.result}`;
   }
-
   if (action.type === 'read_document' && action.file_name) {
     return `📄 ${action.file_name}`;
   }
-
   if (action.type === 'file_analyzed' && action.filename) {
     return `📄 ${action.filename}`;
   }
-
   if (action.type === 'media' && action.action) {
     return `🎵 Media ${action.action.replace(/_/g, ' ')}`;
   }
-
   return ACTION_LABELS[action.type] ?? `⚡ ${action.type.replace(/_/g, ' ')}`;
 }
 
 function executeFrontendAction(action: MessageAction) {
   switch (action.type) {
     case 'open_url':
-      if (action.url) {
-        window.open(action.url, '_blank', 'noopener,noreferrer');
-      }
-      break;
     case 'web_search':
     case 'search':
       if (action.url) {
         window.open(action.url, '_blank', 'noopener,noreferrer');
       }
       break;
-    case 'screenshot':
-    case 'add_todo':
-    case 'add_note':
-    case 'clear_memory':
-    case 'list_apps':
-    case 'show_todos':
-    case 'show_notes':
-    case 'help':
-    case 'system_status':
-    case 'daily_briefing':
-    case 'calculator':
-    case 'weather':
-    case 'joke':
-    case 'quote':
-    case 'time':
-    case 'date':
-    case 'network_status':
-    case 'process_info':
-    case 'random_fact':
-    case 'read_document':
-    case 'file_analyzed':
-    case 'volume':
-    case 'brightness':
-    case 'night_mode':
-    case 'shutdown':
-    case 'cancel_shutdown':
-    case 'restart':
-    case 'sleep':
-    case 'lock':
-    case 'wifi_toggle':
-    case 'bluetooth_toggle':
-    case 'play_media':
-    case 'pause_media':
-    case 'next_media':
-    case 'previous_media':
-    case 'stop_media':
-    case 'media':
-    case 'empty_recycle':
-    case 'task_manager':
-    case 'terminal':
-    case 'open_app':
-    case 'close_app':
-      console.log('JARVIS action:', action);
-      break;
     default:
-      console.log('Unhandled JARVIS action:', action);
+      console.log('JARVIS action:', action);
       break;
   }
 }
@@ -173,7 +112,6 @@ interface ChatResponse {
 
 export default function ChatPanel() {
   const { messages, addMessage, deleteMessage, clearMessages, isTyping, setIsTyping, mode, input, setInput, chatExpandMode, cycleExpandMode } = useStore();
-  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<{ name: string; type: string; data: string } | null>(null);
   const { loading } = useChat();
@@ -182,7 +120,16 @@ export default function ChatPanel() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const typingIntervalRef = useRef<number | null>(null);
 
-  // Auto-scroll to bottom
+  // Virtual scroll setup
+  const parentRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: messages.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 80,
+    overscan: 5,
+  });
+
+  // Auto-scroll to bottom on new messages
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -203,83 +150,51 @@ export default function ChatPanel() {
 
   useEffect(() => clearTypingInterval, [clearTypingInterval]);
 
+  // Listen for quick-action events from TopBar
+  useEffect(() => {
+    const handler = (e: CustomEvent<string>) => {
+      const command = e.detail;
+      if (command) {
+        setInput(command);
+        // Send immediately
+        setTimeout(() => {
+          handleSend(command);
+        }, 0);
+      }
+    };
+    window.addEventListener('quick-action', handler as EventListener);
+    return () => window.removeEventListener('quick-action', handler as EventListener);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Listen for format-chat events from keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: CustomEvent<{ format: string }>) => {
+      applyFormat(e.detail.format as 'bold' | 'italic' | 'bullet' | 'numbered' | 'check' | 'quote' | 'code');
+    };
+    window.addEventListener('format-chat', handler as EventListener);
+    return () => window.removeEventListener('format-chat', handler as EventListener);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [input]);
+
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    // Check file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
       setError('File too large. Max size is 5MB.');
       return;
     }
-
     const reader = new FileReader();
     reader.onload = (event) => {
       const base64 = event.target?.result as string;
       setUploadedFile({
         name: file.name,
         type: file.type,
-        data: base64.split(',')[1], // Remove data URL prefix
+        data: base64.split(',')[1],
       });
     };
     reader.readAsDataURL(file);
   }, []);
-
-  // Upload document to backend
-  const uploadDocument = useCallback(async (file: File) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('save_to_memory', 'true');
-    
-    // Add message about uploading
-    addMessage({
-      role: 'user',
-      content: `📄 Uploading document: ${file.name}`,
-    });
-    setIsTyping(true);
-
-    try {
-      const response = await fetch('http://localhost:8001/api/documents/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        const summary = data.content?.substring(0, 500) + (data.content?.length > 500 ? '...' : '');
-        addMessage({
-          role: 'assistant',
-          content: `📄 **Document uploaded and saved to memory!**\n\n**File:** ${data.file_name}\n**Type:** ${data.file_type}\n**Size:** ${(data.file_size / 1024).toFixed(1)} KB\n**Words:** ${data.word_count}\n\n**Content Preview:**\n\`\`\`\n${summary}\n\`\`\`\n\n💡 You can ask me questions about this document or search in it!`,
-        });
-      } else if (data.content) {
-        // Partial success - content was extracted but there was an error
-        const summary = data.content?.substring(0, 500) + (data.content?.length > 500 ? '...' : '');
-        addMessage({
-          role: 'assistant',
-          content: `⚠️ **Document partially read** (saved with warnings)\n\n**File:** ${data.file_name || data.original_filename}\n**Error:** ${data.error}\n\n**Content Preview:**\n\`\`\`\n${summary}\n\`\`\`\n\n💡 Content was extracted but there may be issues. You can still search in this document!`,
-        });
-      } else {
-        // Show detailed error for debugging
-        const errorDetails = data.error || 'Unknown error';
-        const savedPath = data.saved_path ? `\n📁 Saved to: ${data.saved_path}` : '';
-        const savedSize = data.saved_size ? `\n📊 Saved size: ${data.saved_size} bytes` : '';
-        const traceback = data.traceback ? `\n🔍 Details: ${data.traceback}` : '';
-        
-        addMessage({
-          role: 'assistant',
-          content: `⚠️ **Document upload failed**${savedPath}${savedSize}\n\n❌ Error: ${errorDetails}${traceback}\n\n💡 Try: Check if file is not empty and is a supported format (PDF, DOCX, TXT, etc.)`,
-        });
-      }
-    } catch (err) {
-      addMessage({
-        role: 'assistant',
-        content: `❌ **Error uploading document:** ${err instanceof Error ? err.message : 'Network error'}`,
-      });
-    } finally {
-      setIsTyping(false);
-    }
-  }, [addMessage, setIsTyping]);
 
   const handleSend = useCallback(async (messageOverride?: string) => {
     const nextMessage = messageOverride ?? input;
@@ -288,24 +203,18 @@ export default function ChatPanel() {
     const userMessage = nextMessage.trim();
     setInput('');
     setError(null);
-    setSuggestions([]);
     clearTypingInterval();
 
-    // Handle /clean command
     if (userMessage.toLowerCase() === '/clean' || userMessage.toLowerCase() === '/clear') {
       clearMessages();
-      addMessage({
-        role: 'assistant',
-        content: '**Chat cleared.**\n\nHow can I help you?',
-      });
+      addMessage({ role: 'assistant', content: '**Chat cleared.**\n\nHow can I help you?' });
       return;
     }
 
-    // Add user message with file attachment indicator
-    const messageContent = uploadedFile 
+    const messageContent = uploadedFile
       ? `${userMessage}${userMessage ? '\n\n' : ''}[Attached: ${uploadedFile.name}]`
       : userMessage;
-    
+
     addMessage({ role: 'user', content: messageContent });
     setIsTyping(true);
 
@@ -321,7 +230,6 @@ export default function ChatPanel() {
         const response: ChatResponse = await res.json();
         setUploadedFile(null);
         if (response.actions && response.actions.length > 0) response.actions.forEach(executeFrontendAction);
-        if (response.suggestions) setSuggestions(response.suggestions);
         addMessage({ role: 'assistant', content: '', actions: { copy: true, speak: true, delete: true } as MessageActions, actionButtons: response.actions });
         const fullResponse = response.response;
         let currentIndex = 0;
@@ -338,7 +246,6 @@ export default function ChatPanel() {
           } else { clearTypingInterval(); }
         }, 15);
       } else {
-        // Streaming text message with smooth typing effect
         addMessage({ role: 'assistant', content: '', actions: { copy: true, speak: true, delete: true } as MessageActions });
         const res = await fetch('http://localhost:8001/api/chat', {
           method: 'POST',
@@ -349,7 +256,6 @@ export default function ChatPanel() {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '', fullResponse = '', actions: MessageAction[] = [], displayIndex = 0, streamDone = false;
-        // Typing effect reveals characters gradually as fullResponse grows
         clearTypingInterval();
         typingIntervalRef.current = window.setInterval(() => {
           if (displayIndex < fullResponse.length) {
@@ -378,13 +284,11 @@ export default function ChatPanel() {
               if (data.done) {
                 fullResponse = data.response || fullResponse;
                 actions = data.actions || [];
-                if (data.suggestions) setSuggestions(data.suggestions);
               }
             } catch { /* skip malformed SSE */ }
           }
         }
         streamDone = true;
-        // Ensure final text is shown even if typing interval was already caught up
         const { messages } = useStore.getState();
         if (messages.length > 0) {
           const lastIndex = messages.length - 1;
@@ -448,65 +352,76 @@ export default function ChatPanel() {
     }
   };
 
-  const copyToClipboard = (text: string) => {
+  const copyToClipboard = useCallback((text: string) => {
     navigator.clipboard.writeText(text);
-  };
+  }, []);
 
-  const speakText = (text: string) => {
+  const speakText = useCallback((text: string) => {
     if ('speechSynthesis' in window) {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = 1;
       utterance.pitch = 1;
       window.speechSynthesis.speak(utterance);
     }
-  };
+  }, []);
+
+  const onCycleExpand = useCallback(() => {
+    cycleExpandMode();
+  }, [cycleExpandMode]);
+
+  // Memoize the last AI index
+  const lastAIIndex = useMemo(() => {
+    return [...messages].reverse().findIndex(m => m.role === 'assistant');
+  }, [messages]);
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
-      {/* Messages Area - Fixed scrolling */}
+      {/* Messages Area - Virtual Scrolled */}
       <div
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto p-6 space-y-4"
+        ref={(node) => {
+          (parentRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+          (scrollRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+        }}
+        className="flex-1 overflow-y-auto px-3 py-2"
         style={{ scrollBehavior: 'smooth' }}
       >
-        <AnimatePresence initial={false} mode="popLayout">
-          {messages.map((message, index) => {
-            // Find last AI message index
-            const lastAIIndex = [...messages].reverse().findIndex(m => m.role === 'assistant');
-            const isLastAI = lastAIIndex !== -1 && index === messages.length - 1 - lastAIIndex;
+        <div
+          style={{
+            height: `${virtualizer.getTotalSize()}px`,
+            width: '100%',
+            position: 'relative',
+          }}
+        >
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            const message = messages[virtualRow.index];
+            const isLastAI = lastAIIndex !== -1 && virtualRow.index === messages.length - 1 - lastAIIndex;
             return (
-              <MessageBubble
+              <div
                 key={message.id}
-                message={message}
-                isFirst={index === 0}
-                isLastAI={isLastAI}
-                index={index}
-                onCopy={() => copyToClipboard(message.content)}
-                onSpeak={() => speakText(message.content)}
-                onDelete={() => deleteMessage(message.id)}
-                chatExpandMode={chatExpandMode}
-                onCycleExpand={cycleExpandMode}
-              />
+                data-index={virtualRow.index}
+                ref={virtualizer.measureElement}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+              >
+                  <MessageBubble
+                    message={message}
+                    isFirst={virtualRow.index === 0}
+                    isLastAI={isLastAI}
+                    onCopy={() => copyToClipboard(message.content)}
+                    onSpeak={() => speakText(message.content)}
+                    onDelete={() => deleteMessage(message.id)}
+                    chatExpandMode={chatExpandMode}
+                    onCycleExpand={onCycleExpand}
+                  />
+              </div>
             );
           })}
-        </AnimatePresence>
-
-        {/* Scroll to bottom indicator */}
-        {messages.length > 5 && (
-          <motion.button
-            initial={{ opacity: 0, scale: 0 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0 }}
-            onClick={() => {
-              scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-            }}
-            className="fixed bottom-32 right-8 p-2 rounded-full bg-jarvis-accentPink/80 text-white shadow-lg hover:bg-jarvis-accentPink transition-colors z-10"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M12 5v14M19 12l-7 7-7-7" />
-            </svg>
-          </motion.button>
-        )}
+        </div>
 
         {/* Typing Indicator */}
         {isTyping && (
@@ -514,7 +429,7 @@ export default function ChatPanel() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 10 }}
-            className="flex items-center gap-2 text-jarvis-textMuted"
+            className="flex items-center gap-2 text-jarvis-textMuted py-2"
           >
             <div className="flex gap-1">
               <motion.div
@@ -533,91 +448,10 @@ export default function ChatPanel() {
                 transition={{ duration: 0.5, repeat: Infinity, delay: 0.2 }}
               />
             </div>
-            <span className="text-sm">JARVIS is thinking...</span>
+            <span className="text-xs">JARVIS is thinking...</span>
           </motion.div>
         )}
       </div>
-
-      {/* AI Suggestions */}
-      {suggestions.length > 0 && (
-        <div className="px-6 py-2">
-          <p className="text-xs text-jarvis-textMuted mb-2">Suggested:</p>
-          <div className="flex gap-2 overflow-x-auto">
-            {suggestions.map((suggestion, index) => (
-              <motion.button
-                key={index}
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: index * 0.1 }}
-                className="px-3 py-1.5 rounded-lg bg-jarvis-accentPink/10 text-sm text-jarvis-accentPink hover:bg-jarvis-accentPink/20 transition-all"
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => {
-                  setInput(suggestion);
-                  inputRef.current?.focus();
-                }}
-              >
-                {suggestion}
-              </motion.button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Quick Actions */}
-      <motion.div 
-        className="px-6 py-3 flex gap-2 overflow-x-auto"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-      >
-        {[
-          { label: 'Screenshot', icon: Terminal, command: 'take screenshot' },
-          { label: 'YouTube', icon: ExternalLink, command: 'open youtube' },
-          { label: 'System', icon: Terminal, command: 'system status' },
-          { label: 'Network', icon: Terminal, command: 'network status' },
-          { label: 'Calculator', icon: Terminal, command: 'calculate 15 * 23' },
-          { label: 'Notepad', icon: Terminal, command: 'open notepad' },
-          { label: 'Documents', icon: FileText, command: '__upload__', isUpload: true },
-          { label: 'Joke', icon: Terminal, command: 'tell me a joke' },
-          { label: 'Quote', icon: Terminal, command: 'quote' },
-          { label: 'Fact', icon: Terminal, command: 'random fact' },
-          { label: 'Weather', icon: Terminal, command: 'weather' },
-        ].map((action, idx) => {
-          const Icon = action.icon;
-          return (
-            <motion.button
-              key={action.label}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: idx * 0.05 }}
-              className="px-4 py-2 rounded-lg glass-panel text-sm text-jarvis-textMuted hover:text-jarvis-text whitespace-nowrap transition-all flex items-center gap-2 hover:shadow-lg hover:shadow-jarvis-accentPink/10"
-              whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.1)' }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => {
-                if (action.isUpload) {
-                  // Trigger file input for document upload
-                  const input = document.createElement('input');
-                  input.type = 'file';
-                  input.accept = '.pdf,.docx,.doc,.txt,.xlsx,.xls,.pptx,.ppt,.png,.jpg,.jpeg';
-                  input.onchange = async (e) => {
-                    const file = (e.target as HTMLInputElement).files?.[0];
-                    if (file) {
-                      await uploadDocument(file);
-                    }
-                  };
-                  input.click();
-                } else {
-                  void handleSend(action.command);
-                }
-              }}
-            >
-              <Icon size={14} />
-              {action.label}
-            </motion.button>
-          );
-        })}
-      </motion.div>
 
       {/* Error Banner */}
       {error && (
@@ -625,13 +459,13 @@ export default function ChatPanel() {
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -20 }}
-          className="mx-6 mb-3 p-3 rounded-lg bg-red-500/20 border border-red-500/30 flex items-center gap-2"
+          className="mx-3 mb-2 p-2 rounded-lg bg-red-500/20 border border-red-500/30 flex items-center gap-2"
         >
-          <AlertCircle size={16} className="text-red-400" />
-          <span className="text-sm text-red-200">{error}</span>
+          <AlertCircle size={14} className="text-red-400" />
+          <span className="text-xs text-red-200">{error}</span>
           <button
             onClick={() => setError(null)}
-            className="ml-auto text-xs text-red-300 hover:text-red-100"
+            className="ml-auto text-[10px] text-red-300 hover:text-red-100"
           >
             Dismiss
           </button>
@@ -639,7 +473,7 @@ export default function ChatPanel() {
       )}
 
       {/* Input Area */}
-      <div className="p-4 border-t border-white/10">
+      <div className="px-3 pb-3">
         {/* File Upload Preview */}
         <AnimatePresence>
           {uploadedFile && (
@@ -647,84 +481,51 @@ export default function ChatPanel() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="mb-3 flex items-center gap-3 p-3 rounded-xl bg-jarvis-accentPink/10 border border-jarvis-accentPink/30"
+              className="mb-2 flex items-center gap-3 p-2 rounded-xl bg-jarvis-accentPink/10 border border-jarvis-accentPink/30"
             >
-              {/* Image Thumbnail or Document Icon */}
               {uploadedFile.type.startsWith('image/') ? (
-                <div className="relative w-16 h-16 rounded-lg overflow-hidden bg-black/40 flex-shrink-0">
-                  <img 
+                <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-black/40 flex-shrink-0">
+                  <img
                     src={`data:${uploadedFile.type};base64,${uploadedFile.data}`}
                     alt="Preview"
                     className="w-full h-full object-cover"
                   />
                 </div>
               ) : (
-                <div className="w-16 h-16 rounded-lg bg-gradient-to-br from-jarvis-accentPink/30 to-jarvis-accentRed/30 flex items-center justify-center flex-shrink-0">
-                  <FileText size={28} className="text-jarvis-accentPink" />
+                <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-jarvis-accentPink/30 to-jarvis-accentRed/30 flex items-center justify-center flex-shrink-0">
+                  <FileText size={22} className="text-jarvis-accentPink" />
                 </div>
               )}
-              
-              {/* File Info */}
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-jarvis-text truncate">{uploadedFile.name}</p>
-                <p className="text-xs text-jarvis-textMuted mt-0.5">
+                <p className="text-xs font-medium text-jarvis-text truncate">{uploadedFile.name}</p>
+                <p className="text-[10px] text-jarvis-textMuted">
                   {(uploadedFile.data.length * 0.75 / 1024 / 1024).toFixed(2)} MB
                   {uploadedFile.type.startsWith('image/') ? ' • Image' : ` • ${uploadedFile.type.split('/')[1]?.toUpperCase() || 'File'}`}
                 </p>
-                <p className="text-xs text-jarvis-accentPink mt-1">
-                  {uploadedFile.type.startsWith('image/') ? '✨ Image ready for analysis' : '📎 Document attached'}
-                </p>
               </div>
-              
               <motion.button
                 onClick={() => setUploadedFile(null)}
-                className="p-2 rounded-lg hover:bg-white/10 text-jarvis-textMuted hover:text-red-400 transition-colors"
+                className="p-1.5 rounded-lg hover:bg-white/10 text-jarvis-textMuted hover:text-red-400 transition-colors"
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
               >
-                <X size={18} />
+                <X size={16} />
               </motion.button>
             </motion.div>
           )}
         </AnimatePresence>
 
-        <div className="max-w-3xl mx-auto mb-2 flex items-center gap-1 overflow-x-auto px-1">
-          {[
-            { label: 'Bold', icon: Bold, format: 'bold' as const },
-            { label: 'Italic', icon: Italic, format: 'italic' as const },
-            { label: 'Bullet list', icon: List, format: 'ul' as const },
-            { label: 'Numbered list', icon: ListOrdered, format: 'ol' as const },
-            { label: 'Task list', icon: ListChecks, format: 'task' as const },
-            { label: 'Code', icon: Code2, format: 'code' as const },
-            { label: 'Quote', icon: Quote, format: 'quote' as const },
-          ].map((tool) => {
-            const Icon = tool.icon;
-            return (
-              <button
-                key={tool.label}
-                type="button"
-                onClick={() => applyFormat(tool.format)}
-                className="h-8 w-8 shrink-0 rounded-lg bg-white/5 text-jarvis-textMuted hover:bg-white/10 hover:text-jarvis-text transition-colors flex items-center justify-center"
-                title={tool.label}
-                disabled={loading}
-              >
-                <Icon size={15} />
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="flex items-end gap-3 glass-panel rounded-2xl p-2 max-w-3xl mx-auto w-full">
+        <div className="flex items-end ml-72 mb-4 bottom-4 gap-2 glass-panel rounded-2xl p-2 max-w-2xl">
           {/* Mode Indicator */}
           <div
-            className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
               mode === 'text' ? 'bg-jarvis-accentRed/20' : 'bg-jarvis-accentPink/20'
             }`}
           >
             {mode === 'text' ? (
-              <span className="text-jarvis-accentRed text-lg">T</span>
+              <span className="text-jarvis-accentRed text-sm font-medium">T</span>
             ) : (
-              <Mic size={20} className="text-jarvis-accentPink" />
+              <Mic size={16} className="text-jarvis-accentPink" />
             )}
           </div>
 
@@ -741,7 +542,7 @@ export default function ChatPanel() {
           <motion.button
             onClick={() => fileInputRef.current?.click()}
             disabled={loading || !!uploadedFile}
-            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all shrink-0 ${
+            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all shrink-0 ${
               uploadedFile
                 ? 'bg-jarvis-accentPink/30 text-jarvis-accentPink'
                 : 'bg-white/5 text-jarvis-textMuted hover:text-jarvis-text hover:bg-white/10'
@@ -750,7 +551,7 @@ export default function ChatPanel() {
             whileTap={!uploadedFile ? { scale: 0.95 } : {}}
             title="Upload file or image"
           >
-            <Paperclip size={18} />
+            <Paperclip size={16} />
           </motion.button>
 
           {/* Text Input */}
@@ -760,7 +561,7 @@ export default function ChatPanel() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={uploadedFile ? "Ask about the file... (or just send)" : "Message JARVIS..."}
-            className="max-h-32 min-h-10 flex-1 resize-none bg-transparent py-2 text-sm leading-6 text-jarvis-text placeholder-jarvis-textMuted outline-none scrollbar-visible"
+            className="max-h-28 min-h-9 flex-1 resize-none bg-transparent py-2 text-sm leading-5 text-jarvis-text placeholder-jarvis-textMuted outline-none scrollbar-visible"
             disabled={loading}
             rows={1}
           />
@@ -771,7 +572,7 @@ export default function ChatPanel() {
               void handleSend();
             }}
             disabled={(!input.trim() && !uploadedFile) || loading}
-            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all shrink-0 ${
+            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all shrink-0 ${
               (input.trim() || uploadedFile) && !loading
                 ? 'bg-gradient-to-r from-jarvis-accentPink to-jarvis-accentRed text-white'
                 : 'bg-white/5 text-jarvis-textMuted'
@@ -780,16 +581,12 @@ export default function ChatPanel() {
             whileTap={(input.trim() || uploadedFile) && !loading ? { scale: 0.95 } : {}}
           >
             {mode === 'speech' && !input.trim() && !uploadedFile ? (
-              <Mic size={18} />
+              <Mic size={16} />
             ) : (
-              <Send size={18} />
+              <Send size={16} />
             )}
           </motion.button>
         </div>
-
-        <p className="text-xs text-jarvis-textMuted mt-2 text-center">
-          JARVIS is fully functional • Try: "open chrome", "system status", "add todo buy milk" • Upload images for AI analysis
-        </p>
       </div>
     </div>
   );
@@ -799,7 +596,6 @@ interface MessageBubbleProps {
   message: Message;
   isFirst: boolean;
   isLastAI: boolean;
-  index: number;
   onCopy: () => void;
   onSpeak: () => void;
   onDelete: () => void;
@@ -807,11 +603,10 @@ interface MessageBubbleProps {
   onCycleExpand: () => void;
 }
 
-function MessageBubble({
+const MessageBubble = React.memo(function MessageBubble({
   message,
   isFirst,
   isLastAI,
-  index,
   onCopy,
   onSpeak,
   onDelete,
@@ -825,13 +620,12 @@ function MessageBubble({
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: 20, scale: 0.95 }}
+      initial={{ opacity: 0, y: 12, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: -20, scale: 0.95 }}
-      transition={{ 
-        duration: 0.3, 
-        delay: index * 0.05,
-        layout: { duration: 0.2 }
+      exit={{ opacity: 0, y: -12, scale: 0.97 }}
+      transition={{
+        duration: 0.25,
+        layout: { duration: 0.15 }
       }}
       className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
       onMouseEnter={() => { setShowActions(true); setIsHovered(true); }}
@@ -839,14 +633,14 @@ function MessageBubble({
     >
       <motion.div
         animate={{
-          boxShadow: isHovered 
-            ? isUser 
-              ? '0 8px 30px rgba(239, 68, 68, 0.3)' 
-              : '0 8px 30px rgba(255, 255, 255, 0.1)'
+          boxShadow: isHovered
+            ? isUser
+              ? '0 6px 24px rgba(239, 68, 68, 0.25)'
+              : '0 6px 24px rgba(255, 255, 255, 0.08)'
             : '0 0px 0px rgba(0, 0, 0, 0)'
         }}
-        transition={{ duration: 0.2 }}
-        className={`max-w-[80%] rounded-2xl p-4 relative ${
+        transition={{ duration: 0.15 }}
+        className={`max-w-[85%] rounded-2xl px-3 py-2.5 relative ${
           isUser
             ? 'bg-gradient-to-r from-jarvis-accentRed to-red-600 text-white rounded-br-md'
             : 'glass-panel rounded-bl-md'
@@ -854,26 +648,25 @@ function MessageBubble({
       >
         {/* Message Content */}
         {isFirst && !isUser ? (
-          <div className="space-y-2">
-            <h2 className="text-lg font-semibold">Hello, I'm JARVIS.</h2>
-            <p className="text-jarvis-textMuted">I'm your fully functional AI assistant. I can control your system, search the web, manage your tasks, and more. What can I do for you?</p>
+          <div className="space-y-1">
+            <h2 className="text-base font-semibold">Hello, I'm JARVIS.</h2>
+            <p className="text-jarvis-textMuted text-xs">I'm your fully functional AI assistant. I can control your system, search the web, manage your tasks, and more. What can I do for you?</p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-1">
             {!isUser ? (
               <EnhancedMarkdown content={message.content} />
             ) : (
-              <p className="text-sm leading-relaxed whitespace-pre-wrap">
+              <p className="text-[13px] leading-relaxed whitespace-pre-wrap">
                 {message.content}
               </p>
             )}
-            {/* Show action badges */}
             {message.actionButtons && message.actionButtons.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-2 pt-2 border-t border-white/10">
+              <div className="flex flex-wrap gap-1 mt-1.5 pt-1.5 border-t border-white/10">
                 {message.actionButtons.map((action: MessageAction, idx: number) => (
                   <span
                     key={idx}
-                    className="px-2 py-0.5 rounded text-[10px] bg-jarvis-accentPink/20 text-jarvis-accentPink"
+                    className="px-1.5 py-0.5 rounded text-[9px] bg-jarvis-accentPink/20 text-jarvis-accentPink"
                   >
                     {getActionLabel(action)}
                   </span>
@@ -887,43 +680,43 @@ function MessageBubble({
         <AnimatePresence>
           {showActions && !isFirst && (
             <motion.div
-              initial={{ opacity: 0, y: 10 }}
+              initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
+              exit={{ opacity: 0, y: 6 }}
               className={`absolute ${
                 isUser ? 'left-0 -translate-x-full' : 'right-0 translate-x-full'
-              } top-2 flex flex-col gap-1`}
+              } top-1.5 flex flex-col gap-0.5`}
             >
               <button
                 onClick={onCopy}
-                className="p-1.5 rounded-lg bg-black/50 text-jarvis-textMuted hover:text-jarvis-text transition-colors"
+                className="p-1 rounded-lg bg-black/50 text-jarvis-textMuted hover:text-jarvis-text transition-colors"
                 title="Copy"
               >
-                <Copy size={14} />
+                <Copy size={12} />
               </button>
               {!isUser && (
                 <button
                   onClick={onSpeak}
-                  className="p-1.5 rounded-lg bg-black/50 text-jarvis-textMuted hover:text-jarvis-text transition-colors"
+                  className="p-1 rounded-lg bg-black/50 text-jarvis-textMuted hover:text-jarvis-text transition-colors"
                   title="Speak"
                 >
-                  <Volume2 size={14} />
+                  <Volume2 size={12} />
                 </button>
               )}
               <button
                 onClick={onDelete}
-                className="p-1.5 rounded-lg bg-black/50 text-jarvis-textMuted hover:text-red-400 transition-colors"
+                className="p-1 rounded-lg bg-black/50 text-jarvis-textMuted hover:text-red-400 transition-colors"
                 title="Delete"
               >
-                <Trash2 size={14} />
+                <Trash2 size={12} />
               </button>
               {!isUser && isLastAI && (
                 <button
                   onClick={onCycleExpand}
-                  className="p-1.5 rounded-lg bg-black/50 text-jarvis-textMuted hover:text-jarvis-accentPink transition-colors"
+                  className="p-1 rounded-lg bg-black/50 text-jarvis-textMuted hover:text-jarvis-accentPink transition-colors"
                   title={chatExpandMode === 'normal' ? 'Expand canvas' : chatExpandMode === 'half' ? 'Full screen' : 'Reset canvas'}
                 >
-                  {chatExpandMode === 'normal' ? <Maximize2 size={14} /> : chatExpandMode === 'half' ? <Maximize2 size={14} /> : <Minimize2 size={14} />}
+                  {chatExpandMode === 'normal' || chatExpandMode === 'half' ? <Maximize2 size={12} /> : <Minimize2 size={12} />}
                 </button>
               )}
             </motion.div>
@@ -931,20 +724,23 @@ function MessageBubble({
         </AnimatePresence>
 
         {/* Timestamp */}
-        <motion.span
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.2 }}
-          className={`text-[10px] mt-2 block ${
-            isUser ? 'text-white/70' : 'text-jarvis-textMuted'
+        <span
+          className={`text-[9px] mt-1 block ${
+            isUser ? 'text-white/60' : 'text-jarvis-textMuted'
           }`}
         >
           {new Date(message.timestamp).toLocaleTimeString([], {
             hour: '2-digit',
             minute: '2-digit',
           })}
-        </motion.span>
+        </span>
       </motion.div>
     </motion.div>
   );
-}
+}, (prev, next) => {
+  return prev.message.id === next.message.id
+    && prev.message.content === next.message.content
+    && prev.isLastAI === next.isLastAI
+    && prev.chatExpandMode === next.chatExpandMode
+    && prev.isFirst === next.isFirst;
+});

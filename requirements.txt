@@ -1,4 +1,3 @@
-anthropic
 beautifulsoup4
 comtypes
 duckduckgo_search
@@ -6,13 +5,12 @@ gTTS
 google-api-python-client
 google-auth
 google-auth-oauthlib
-google-generativeai
 googletrans
+httpx
 llama-cpp-python
 matplotlib
 noisereduce
 numpy
-openai
 openai-whisper
 opencv-python
 pandas

@@ -13,6 +13,7 @@ import time
 import webbrowser
 import psutil
 import random
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Dict, Any, Optional
 from pathlib import Path
@@ -55,13 +56,6 @@ try:
     from duckduckgo_search import DDGS
 except ImportError:
     DDGS = None
-try:
-    import warnings
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=FutureWarning)
-        import google.generativeai as genai
-except ImportError:
-    genai = None
 try:
     from supabase import create_client
 except ImportError:
@@ -208,10 +202,7 @@ async def broadcast_log(log_entry: Dict[str, Any]):
 
 # (JARVIS path and .env already loaded above)
 
-# API Keys from environment
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+# API Keys from environment (no direct AI provider keys - all routed through AI Router v3.0)
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY", "")
 NEWSAPI_KEY = os.getenv("NEWSAPI_KEY", "")
 ALPHA_VANTAGE_KEY = os.getenv("ALPHA_VANTAGE_KEY", "")
@@ -224,7 +215,25 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 RAWG_API_KEY = os.getenv("RAWG_API_KEY", "")
 TMDB_API_KEY = os.getenv("TMDB_API_KEY", "")  # TheMovieDB - FREE: 40 req/10sec
 
-app = FastAPI(title="JARVIS Ultimate", version="2.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    tasks: list[asyncio.Task] = []
+    try:
+        tasks.append(asyncio.create_task(process_log_broadcasts()))
+        tasks.append(asyncio.create_task(broadcast_system_stats()))
+        await jarvis_core.initialize()
+        yield
+    finally:
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+
+app = FastAPI(title="JARVIS Ultimate", version="2.0", lifespan=lifespan)
 
 # CORS
 app.add_middleware(
@@ -253,55 +262,29 @@ class ChatResponse(BaseModel):
 # 🤖 ULTIMATE API CLIENT - All External APIs
 # ═══════════════════════════════════════════════════════════════
 
+from jarvis.router_service import router_client
+
 class APIClient:
     """Universal API client for all external services"""
     
     def __init__(self):
-        self.translator = Translator()
-        self.gemini_model = None
-        if GEMINI_API_KEY and genai:
-            try:
-                genai.configure(api_key=GEMINI_API_KEY)
-                self.gemini_model = genai.GenerativeModel('gemini-pro')
-            except Exception as e:
-                logger.warning(f"Gemini init failed: {e}")
+        self.translator = Translator() if Translator is not None else None
     
     # ─────────────────────────────────────────────────────────
-    # 🤖 AI APIs
+    # 🤖 AI APIs (all routed through AI Router v3.0)
     # ─────────────────────────────────────────────────────────
     
-    def ask_openrouter(self, prompt: str, model: str = "openai/gpt-3.5-turbo") -> str:
-        """Use OpenRouter for multiple AI models (FREE: 200 credits/day)"""
-        if not OPENROUTER_API_KEY:
-            return "❌ OPENROUTER_API_KEY not configured"
-        
+    def ask_ai(self, prompt: str, system_prompt: str = None) -> str:
+        """Unified AI method - all requests go through the AI Router"""
         try:
-            response = requests.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": model,
-                    "messages": [{"role": "user", "content": prompt}]
-                },
-                timeout=30
-            )
-            return response.json()["choices"][0]["message"]["content"]
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": prompt})
+            response = router_client.chat(messages=messages)
+            return response.get("choices", [{}])[0].get("message", {}).get("content", "") or response
         except Exception as e:
-            return f"❌ OpenRouter error: {str(e)}"
-    
-    def ask_gemini(self, prompt: str) -> str:
-        """Google Gemini API (FREE: 60 req/min)"""
-        if not self.gemini_model:
-            return "❌ GEMINI_API_KEY not configured"
-        
-        try:
-            response = self.gemini_model.generate_content(prompt)
-            return response.text
-        except Exception as e:
-            return f"❌ Gemini error: {str(e)}"
+            return f"❌ AI error: {str(e)}"
     
     # ─────────────────────────────────────────────────────────
     # 🌤️ Weather APIs
@@ -1022,22 +1005,24 @@ class JarvisCore:
     async def initialize(self):
         if self.initialized:
             return
-            
+
         try:
             logger.info("Initializing JARVIS...")
-            
+
             from jarvis.memory import memory
             from jarvis.dashboard import SystemDashboard
             from jarvis.llm import JarvisLLM
-            
+            from jarvis.execution_engine import ExecutionEngine
+
             self.memory = memory
             self.llm = JarvisLLM()
+            self.execution_engine = ExecutionEngine()
             self.dashboard = SystemDashboard()
             self.dashboard.start_monitoring()
-            
+
             self.initialized = True
             logger.info("JARVIS initialized successfully!")
-            
+
         except Exception as e:
             logger.error(f"Failed to initialize: {e}")
             self.initialized = True
@@ -1064,6 +1049,40 @@ class JarvisCore:
         if any(pattern in q for pattern in ("cancel shutdown", "abort shutdown")):
             return await self._execute_single_task("cancel_shutdown", session_id)
 
+        # ── EXECUTION ENGINE (tool-first, LLM-last) ──
+        # This is the SINGLE entry point for all tool matching.
+        # If a tool matches, the LLM is NEVER called.
+        if hasattr(self, 'execution_engine') and self.execution_engine:
+            def _llm_callable(text: str) -> str:
+                """Wrapper to call the LLM from the execution engine."""
+                try:
+                    loop = asyncio.get_event_loop()
+                    return loop.run_in_executor(
+                        None, self.llm.chat, text, None, config.LLM_MAX_TOKENS
+                    )
+                except Exception:
+                    return self.llm.chat(text, None, config.LLM_MAX_TOKENS)
+
+            result_text, handled = self.execution_engine.execute(message, llm_callable=_llm_callable)
+
+            if handled and result_text:
+                elapsed = (time.time() - t_total) * 1000
+                logger.info(
+                    "[EXEC_ENGINE] query='%s' result='%s' latency=%.1fms",
+                    message[:60], result_text[:80], elapsed,
+                )
+                # Build frontend actions from the command result
+                cmd_result = self.execution_engine.command_engine.process(message)
+                actions = []
+                if cmd_result.matched:
+                    actions = self._build_frontend_actions(cmd_result)
+
+                return {
+                    "response": result_text,
+                    "actions": actions,
+                }
+
+        # ── LEGACY FALLBACK (old NLP pipeline + tool router) ──
         t1 = time.time()
         nlp_result = None
         try:
@@ -1168,14 +1187,63 @@ class JarvisCore:
 
         return {"response": response_text, "actions": actions}
 
-    def chat_stream(self, message: str, session_id: str = "default", max_tokens: int = 48):
+    def _build_frontend_actions(self, cmd_result) -> list:
+        """Build frontend action list from a CommandResult."""
+        actions = []
+        tool = cmd_result.tool_name
+        params = cmd_result.params
+
+        if tool == "open_website":
+            target = params.get("target", "")
+            url = params.get("url", f"https://{target}.com")
+            actions.append({"type": "open_url", "url": url})
+        elif tool == "open_app":
+            actions.append({"type": "open_app", "app": params.get("target", "")})
+        elif tool == "open_folder":
+            actions.append({"type": "open_folder", "target": params.get("target", "")})
+        elif tool == "web_search":
+            actions.append({"type": "web_search", "query": params.get("query", "")})
+        elif tool == "search_on_platform":
+            actions.append({"type": "search", "query": params.get("query", ""), "platform": params.get("platform", "")})
+        elif tool == "play_music":
+            actions.append({"type": "play_music", "query": params.get("query", "")})
+        elif tool == "screenshot":
+            actions.append({"type": "screenshot"})
+        elif tool in ("volume_control", "brightness_control"):
+            actions.append({"type": tool.replace("_", "-"), "action": params.get("action", "")})
+        elif tool == "calculator":
+            actions.append({"type": "calculator", "expression": params.get("expression", "")})
+        elif tool == "weather":
+            actions.append({"type": "weather", "location": params.get("location", "")})
+        elif tool == "system_power":
+            actions.append({"type": params.get("action", "system_power")})
+        else:
+            actions.append({"type": tool})
+
+        return actions
+
+    def chat_stream(self, message: str, session_id: str = "default", max_tokens: int | None = None):
         """Streaming chat (sync gen — Starlette auto-threads it). Yields SSE strings."""
         if not self.llm:
             yield f"data: {json.dumps({'error': 'AI not available'})}\n\n"
             yield f"data: {json.dumps({'done': True})}\n\n"
             return
 
+        # ── EXECUTION ENGINE FIRST (tool dispatch before LLM stream) ──
+        if hasattr(self, 'execution_engine') and self.execution_engine:
+            result_text, handled = self.execution_engine.execute(message, llm_callable=None)
+            if handled and result_text:
+                cmd_result = self.execution_engine.command_engine.process(message)
+                actions = self._build_frontend_actions(cmd_result) if cmd_result.matched else []
+                logger.info("[EXEC_ENGINE stream] tool=%s query='%s'", cmd_result.tool_name, message[:60])
+                yield f"data: {json.dumps({'token': result_text})}\n\n"
+                yield f"data: {json.dumps({'done': True, 'response': result_text, 'actions': actions})}\n\n"
+                return
+
+        # ── LLM STREAMING FALLBACK ──
         collected: list[str] = []
+        if max_tokens is None:
+            max_tokens = config.LLM_MAX_TOKENS
         try:
             for token in self.llm.chat_stream(message, max_tokens=max_tokens):
                 if token:
@@ -1943,13 +2011,6 @@ async def process_log_broadcasts():
             await asyncio.sleep(0.1)  # Small delay to prevent busy-waiting
         except Exception:
             await asyncio.sleep(1)
-
-@app.on_event("startup")
-async def startup():
-    # Start background tasks
-    asyncio.create_task(process_log_broadcasts())
-    asyncio.create_task(broadcast_system_stats())
-    await jarvis_core.initialize()
 
 @app.post("/api/chat")
 async def chat(request: Request):
