@@ -32,8 +32,8 @@ const FRONTEND_PATH = isDev
   : path.join(__dirname, '../frontend/dist/index.html');
 
 const BACKEND_PATH = isDev
-  ? path.join(__dirname, '../backend/jarvis_api.py')
-  : path.join(process.resourcesPath, 'backend/jarvis_api.py');
+  ? path.join(__dirname, '../backend/app.py')
+  : path.join(process.resourcesPath, 'backend/app.py');
 
 // ============== WINDOW MANAGEMENT ==============
 

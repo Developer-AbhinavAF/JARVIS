@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Bell,
@@ -111,6 +111,7 @@ function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: b
 export default function SettingsSection() {
   const [activeTab, setActiveTab] = useState('general');
   const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   // Settings state
   const [settings, setSettings] = useState({
@@ -126,22 +127,64 @@ export default function SettingsSection() {
     animations: true,
     highPerformance: false,
     offlineMode: false,
-    // 10 Pro Features
-    autoSend3Sec: true,           // 1. Auto-send after 3 sec silence
-    smartSuggestions: true,       // 2. AI smart suggestions
-    quickActions: true,           // 3. Quick actions widget
-    miniMode: false,              // 4. Mini floating mode
-    conversationSearch: true,     // 5. Search chat history
-    exportChat: true,             // 6. Export to PDF/TXT
-    scheduledTasks: true,         // 7. Reminders & scheduled tasks
-    voiceClone: false,            // 8. Voice personalization
-    autoCorrection: true,         // 9. Smart auto-correction
-    contextMemory: true,          // 10. Context-aware responses
+    autoSend3Sec: true,
+    smartSuggestions: true,
+    quickActions: true,
+    miniMode: false,
+    conversationSearch: true,
+    exportChat: true,
+    scheduledTasks: true,
+    voiceClone: false,
+    autoCorrection: true,
+    contextMemory: true,
   });
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  // Load settings from backend on mount
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const res = await fetch('http://localhost:8001/api/settings');
+        const data = await res.json();
+        if (data.settings) {
+          setSettings(prev => ({
+            ...prev,
+            voiceMode: data.settings.auto_speak ?? prev.voiceMode,
+            darkMode: data.settings.theme === 'dark' ?? prev.darkMode,
+            notifications: data.settings.developer_mode ? false : prev.notifications,
+            highPerformance: data.settings.performance_mode === 'performance',
+            autoCorrection: data.settings.auto_fallback ?? prev.autoCorrection,
+            contextMemory: data.settings.memory_compression ?? prev.contextMemory,
+          }));
+        }
+      } catch (e) {
+        console.warn('Failed to load settings from backend:', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadSettings();
+  }, []);
+
+  const handleSave = async () => {
+    try {
+      const payload: Record<string, unknown> = {
+        theme: settings.darkMode ? 'dark' : 'light',
+        auto_speak: settings.voiceMode,
+        performance_mode: settings.highPerformance ? 'performance' : 'balanced',
+        auto_fallback: settings.autoCorrection,
+        memory_compression: settings.contextMemory,
+        developer_mode: !settings.notifications,
+      };
+      await fetch('http://localhost:8001/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: payload }),
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      console.error('Failed to save settings:', e);
+    }
   };
 
   const tabs = [

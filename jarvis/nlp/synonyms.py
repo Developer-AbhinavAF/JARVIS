@@ -36,6 +36,7 @@ VERB_SYNONYMS: dict[str, str] = {
     "terminate": "close",
     "end": "close",
     "turn off": "close",
+    "turn on": "open",
 
     # play
     "play": "play",

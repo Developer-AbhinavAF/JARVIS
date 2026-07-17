@@ -288,8 +288,21 @@ def get_task_status(task_id: str) -> Optional[Task]:
 
 
 def tool_submit_task(task_type: str, description: str) -> str:
-    """Tool: Submit a background task (placeholder for LLM)."""
-    return f"Task type '{task_type}' registered: {description}"
+    """Tool: Submit a background task."""
+    try:
+        import uuid
+        task = Task(
+            task_id=str(uuid.uuid4())[:8],
+            task_type=task_type,
+            description=description,
+            status=TaskStatus.PENDING,
+            created_at=datetime.now(),
+        )
+        with task_manager._lock:
+            task_manager.tasks[task.task_id] = task
+        return f"Task registered: {task.task_id} ({task_type}) - {description}"
+    except Exception as e:
+        return f"Failed to submit task: {e}"
 
 
 def tool_get_task_status(task_id: str) -> str:

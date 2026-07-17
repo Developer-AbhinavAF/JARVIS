@@ -458,11 +458,31 @@ def main() -> None:
 
 
 def init_web_browser(headless: bool = True):
-    pass
+    """Initialize web browser subsystem.
+
+    Args:
+        headless: If True, run browser without GUI (for automation).
+    Returns:
+        Browser instance or None if unavailable.
+    """
+    try:
+        from jarvis.tools import web_browser
+        return web_browser
+    except ImportError:
+        return None
 
 
 def init_shopping_assistant():
-    pass
+    """Initialize shopping assistant subsystem.
+
+    Returns:
+        Shopping assistant instance or None if unavailable.
+    """
+    try:
+        from jarvis.shopping import ShoppingAssistant
+        return ShoppingAssistant()
+    except ImportError:
+        return None
 
 
 if __name__ == "__main__":

@@ -1,0 +1,299 @@
+{
+  "GET_WEATHER": {
+    "get_weather": {
+      "tool_name": "get_weather",
+      "count": 33,
+      "successes": 33,
+      "failures": 0,
+      "last_used": 1784126242.7504263
+    }
+  },
+  "VOLUME_CONTROL": {
+    "volume_control": {
+      "tool_name": "volume_control",
+      "count": 26,
+      "successes": 26,
+      "failures": 0,
+      "last_used": 1784034897.745891
+    }
+  },
+  "JOKE": {
+    "joke": {
+      "tool_name": "joke",
+      "count": 36,
+      "successes": 36,
+      "failures": 0,
+      "last_used": 1784091124.2353
+    }
+  },
+  "FLIP_COIN": {
+    "flip_coin": {
+      "tool_name": "flip_coin",
+      "count": 3,
+      "successes": 3,
+      "failures": 0,
+      "last_used": 1784027499.910902
+    }
+  },
+  "PROGRAMMING": {
+    "open_vscode": {
+      "tool_name": "open_vscode",
+      "count": 26,
+      "successes": 26,
+      "failures": 0,
+      "last_used": 1784036282.5999227
+    }
+  },
+  "OPEN_WEBSITE": {
+    "open_website": {
+      "tool_name": "open_website",
+      "count": 154,
+      "successes": 154,
+      "failures": 0,
+      "last_used": 1784104700.3561425
+    }
+  },
+  "OPEN_APP": {
+    "open_app": {
+      "tool_name": "open_app",
+      "count": 57,
+      "successes": 57,
+      "failures": 0,
+      "last_used": 1784095377.1309206
+    }
+  },
+  "DATETIME": {
+    "datetime": {
+      "tool_name": "datetime",
+      "count": 172,
+      "successes": 172,
+      "failures": 0,
+      "last_used": 1784115026.8917277
+    }
+  },
+  "SAVE_MEMORY": {
+    "memory_save": {
+      "tool_name": "memory_save",
+      "count": 16,
+      "successes": 16,
+      "failures": 0,
+      "last_used": 1784033630.249194
+    }
+  },
+  "RECALL_MEMORY": {
+    "memory_search": {
+      "tool_name": "memory_search",
+      "count": 111,
+      "successes": 111,
+      "failures": 0,
+      "last_used": 1784114933.4631805
+    }
+  },
+  "BRIGHTNESS_CONTROL": {
+    "brightness_control": {
+      "tool_name": "brightness_control",
+      "count": 34,
+      "successes": 34,
+      "failures": 0,
+      "last_used": 1784095369.6438627
+    }
+  },
+  "SCREENSHOT": {
+    "screenshot": {
+      "tool_name": "screenshot",
+      "count": 20,
+      "successes": 20,
+      "failures": 0,
+      "last_used": 1784034897.7508824
+    }
+  },
+  "SYSTEM_STATUS": {
+    "system_status": {
+      "tool_name": "system_status",
+      "count": 5,
+      "successes": 5,
+      "failures": 0,
+      "last_used": 1784114921.9351385
+    }
+  },
+  "GREETING": {
+    "greeting": {
+      "tool_name": "greeting",
+      "count": 23,
+      "successes": 23,
+      "failures": 0,
+      "last_used": 1784114924.0935748
+    }
+  },
+  "PLAY_MUSIC": {
+    "play_music": {
+      "tool_name": "play_music",
+      "count": 135,
+      "successes": 135,
+      "failures": 0,
+      "last_used": 1784095387.9016995
+    }
+  },
+  "TIMER": {
+    "timer": {
+      "tool_name": "timer",
+      "count": 11,
+      "successes": 11,
+      "failures": 0,
+      "last_used": 1784091115.0703387
+    }
+  },
+  "WEB_SEARCH": {
+    "web_search": {
+      "tool_name": "web_search",
+      "count": 118,
+      "successes": 118,
+      "failures": 0,
+      "last_used": 1784034897.6563406
+    }
+  },
+  "PERFORMANCE_DIAGNOSIS": {
+    "": {
+      "tool_name": "",
+      "count": 16,
+      "successes": 16,
+      "failures": 0,
+      "last_used": 1784034897.6818326
+    }
+  },
+  "FILE_MANAGEMENT": {
+    "file_management": {
+      "tool_name": "file_management",
+      "count": 14,
+      "successes": 14,
+      "failures": 0,
+      "last_used": 1784034897.7326715
+    }
+  },
+  "SYSTEM_POWER": {
+    "system_power": {
+      "tool_name": "system_power",
+      "count": 10,
+      "successes": 10,
+      "failures": 0,
+      "last_used": 1784034897.7296646
+    }
+  },
+  "PLAY_YOUTUBE": {
+    "play_music": {
+      "tool_name": "play_music",
+      "count": 3,
+      "successes": 3,
+      "failures": 0,
+      "last_used": 1784033630.238892
+    }
+  },
+  "GET_NEWS": {
+    "get_news": {
+      "tool_name": "get_news",
+      "count": 8,
+      "successes": 8,
+      "failures": 0,
+      "last_used": 1784091123.516668
+    }
+  },
+  "CALCULATOR": {
+    "calculator": {
+      "tool_name": "calculator",
+      "count": 2,
+      "successes": 2,
+      "failures": 0,
+      "last_used": 1784036282.2089558
+    }
+  },
+  "IP_LOOKUP": {
+    "ip_lookup": {
+      "tool_name": "ip_lookup",
+      "count": 1,
+      "successes": 1,
+      "failures": 0,
+      "last_used": 1784036282.5777757
+    }
+  },
+  "CLIPBOARD": {
+    "clipboard_paste": {
+      "tool_name": "clipboard_paste",
+      "count": 1,
+      "successes": 1,
+      "failures": 0,
+      "last_used": 1784036282.6454098
+    }
+  },
+  "ADD_TODO": {
+    "add_todo": {
+      "tool_name": "add_todo",
+      "count": 3,
+      "successes": 3,
+      "failures": 0,
+      "last_used": 1784114935.6164527
+    }
+  },
+  "LIST_TODOS": {
+    "list_todos": {
+      "tool_name": "list_todos",
+      "count": 2,
+      "successes": 2,
+      "failures": 0,
+      "last_used": 1784036282.702551
+    }
+  },
+  "WINDOW_CONTROL": {
+    "window_control": {
+      "tool_name": "window_control",
+      "count": 2,
+      "successes": 2,
+      "failures": 0,
+      "last_used": 1784104584.55998
+    }
+  },
+  "NASA_APOD": {
+    "nasa_apod": {
+      "tool_name": "nasa_apod",
+      "count": 2,
+      "successes": 2,
+      "failures": 0,
+      "last_used": 1784036282.8489194
+    }
+  },
+  "VISUAL_ANALYSIS": {
+    "": {
+      "tool_name": "",
+      "count": 275,
+      "successes": 275,
+      "failures": 0,
+      "last_used": 1784104514.7872822
+    }
+  },
+  "SEARCH_ON_PLATFORM": {
+    "search_on_platform": {
+      "tool_name": "search_on_platform",
+      "count": 39,
+      "successes": 39,
+      "failures": 0,
+      "last_used": 1784095378.7080638
+    }
+  },
+  "OPEN_FOLDER": {
+    "open_folder": {
+      "tool_name": "open_folder",
+      "count": 6,
+      "successes": 6,
+      "failures": 0,
+      "last_used": 1784091125.5611868
+    }
+  },
+  "CLOSE_APP": {
+    "close_app": {
+      "tool_name": "close_app",
+      "count": 6,
+      "successes": 6,
+      "failures": 0,
+      "last_used": 1784091126.4603462
+    }
+  }
+}

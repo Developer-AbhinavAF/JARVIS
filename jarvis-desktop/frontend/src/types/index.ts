@@ -31,6 +31,11 @@ export interface Message {
   timestamp: number;
   actions?: MessageActions;
   actionButtons?: MessageAction[];
+  intent?: string;
+  intent_confidence?: number;
+  tool?: string;
+  verified?: boolean;
+  total_ms?: number;
 }
 
 export interface SystemStats {

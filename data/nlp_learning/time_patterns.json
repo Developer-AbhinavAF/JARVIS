@@ -1,0 +1,162 @@
+[
+  {
+    "category": "website",
+    "value": "youtube",
+    "hour_start": 15,
+    "hour_end": 17,
+    "count": 1,
+    "confidence": 0.1
+  },
+  {
+    "category": "website",
+    "value": "https://www.youtube.com",
+    "hour_start": 15,
+    "hour_end": 17,
+    "count": 11,
+    "confidence": 1.0
+  },
+  {
+    "category": "website",
+    "value": "https://www.google.com",
+    "hour_start": 15,
+    "hour_end": 17,
+    "count": 7,
+    "confidence": 0.7
+  },
+  {
+    "category": "app",
+    "value": "notepad",
+    "hour_start": 15,
+    "hour_end": 17,
+    "count": 2,
+    "confidence": 0.2
+  },
+  {
+    "category": "music_app",
+    "value": "music",
+    "hour_start": 16,
+    "hour_end": 18,
+    "count": 126,
+    "confidence": 1.0
+  },
+  {
+    "category": "website",
+    "value": "bhai",
+    "hour_start": 16,
+    "hour_end": 18,
+    "count": 2,
+    "confidence": 0.2
+  },
+  {
+    "category": "app",
+    "value": "chrome",
+    "hour_start": 16,
+    "hour_end": 18,
+    "count": 16,
+    "confidence": 1.0
+  },
+  {
+    "category": "website",
+    "value": "https://www.youtube.com",
+    "hour_start": 17,
+    "hour_end": 19,
+    "count": 125,
+    "confidence": 1.0
+  },
+  {
+    "category": "app",
+    "value": "code",
+    "hour_start": 17,
+    "hour_end": 19,
+    "count": 8,
+    "confidence": 0.8
+  },
+  {
+    "category": "app",
+    "value": "calculator",
+    "hour_start": 17,
+    "hour_end": 19,
+    "count": 6,
+    "confidence": 0.6
+  },
+  {
+    "category": "video_app",
+    "value": "song",
+    "hour_start": 17,
+    "hour_end": 19,
+    "count": 3,
+    "confidence": 0.3
+  },
+  {
+    "category": "app",
+    "value": "many apps",
+    "hour_start": 18,
+    "hour_end": 20,
+    "count": 1,
+    "confidence": 0.1
+  },
+  {
+    "category": "app",
+    "value": "program",
+    "hour_start": 18,
+    "hour_end": 20,
+    "count": 1,
+    "confidence": 0.1
+  },
+  {
+    "category": "music_app",
+    "value": "music",
+    "hour_start": 21,
+    "hour_end": 23,
+    "count": 6,
+    "confidence": 0.6
+  },
+  {
+    "category": "app",
+    "value": "chrome",
+    "hour_start": 21,
+    "hour_end": 23,
+    "count": 5,
+    "confidence": 0.5
+  },
+  {
+    "category": "website",
+    "value": "website",
+    "hour_start": 21,
+    "hour_end": 23,
+    "count": 4,
+    "confidence": 0.4
+  },
+  {
+    "category": "music_app",
+    "value": "music",
+    "hour_start": 9,
+    "hour_end": 11,
+    "count": 3,
+    "confidence": 0.3
+  },
+  {
+    "category": "app",
+    "value": "chrome",
+    "hour_start": 9,
+    "hour_end": 11,
+    "count": 2,
+    "confidence": 0.2
+  },
+  {
+    "category": "website",
+    "value": "website",
+    "hour_start": 9,
+    "hour_end": 11,
+    "count": 2,
+    "confidence": 0.2
+  },
+  {
+    "category": "website",
+    "value": "https://www.youtube.com",
+    "hour_start": 13,
+    "hour_end": 15,
+    "count": 2,
+    "confidence": 0.2
+  }
+]

@@ -1,0 +1,39 @@
+{
+  "active_project": "proj_c5821a72",
+  "projects": {
+    "proj_c5821a72": {
+      "project_id": "proj_c5821a72",
+      "name": "JARVIS",
+      "description": "AI OS",
+      "stage": "planning",
+      "progress": 0.0,
+      "tasks_pending": 2,
+      "tasks_completed": 0,
+      "goals": [
+        "Build AGI"
+      ],
+      "languages": [],
+      "known_bugs": [],
+      "ideas": [],
+      "architecture_notes": "",
+      "recent_changes": [],
+      "future_plans": [],
+      "tasks": [
+        {
+          "task_id": "ptask_ff636d95",
+          "title": "Build NLP",
+          "description": "Core semantic NLP",
+          "status": "pending"
+        },
+        {
+          "task_id": "ptask_0b6bdea0",
+          "title": "Build planner",
+          "description": "Autonomous planning",
+          "status": "pending"
+        }
+      ],
+      "completed_tasks": []
+    }
+  },
+  "saved_at": 1784037851.147866
+}

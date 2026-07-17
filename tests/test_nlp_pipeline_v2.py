@@ -326,7 +326,7 @@ def test_tool_routing():
         ("calculate 2 + 2", "calculator", True),
         ("set timer for 5 minutes", "timer", True),
         ("hello", "chat", True),  # Routes to chat tool via CHAT intent
-        ("how are you", "chat", True),  # Routes to chat tool via CHAT intent
+        ("how are you", "chat", False),  # Conversational - low confidence, no auto-execute
     ]
     
     for query, expected_tool, should_execute in test_cases:

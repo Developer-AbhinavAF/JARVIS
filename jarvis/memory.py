@@ -720,6 +720,119 @@ class JarvisMemory:
             logger.exception("Failed to delete YouTube notes")
             return False
 
+    def search(self, query: str) -> list[str]:
+        """Search across all memory stores (conversations, notes, YouTube notes).
+
+        This is the unified search method called by app.py for RECALL_MEMORY intent.
+        Returns a list of human-readable string results.
+        """
+        results: list[str] = []
+        try:
+            # Search conversations
+            convos = self.search_conversations(query, limit=3)
+            for c in convos:
+                ts = c.get("timestamp", "")[:16]
+                summary = c.get("summary", "")
+                results.append(f"[Conversation {ts}] {summary}")
+
+            # Search notes
+            notes = self.search_notes(query)
+            for n in notes[:3]:
+                title = n.get("title", "")
+                content = n.get("content", "")[:120]
+                results.append(f"[Note] {title}: {content}")
+
+            # Search YouTube notes
+            yt_notes = self.search_youtube_notes(query)
+            for y in yt_notes[:3]:
+                title = y.get("title", "")
+                summary = y.get("summary", "")[:120]
+                results.append(f"[YouTube] {title}: {summary}")
+
+            # Search preferences
+            prefs = self.get_all_preferences()
+            for key, value in prefs.items():
+                if query.lower() in key.lower() or query.lower() in value.lower():
+                    results.append(f"[Preference] {key}: {value}")
+        except Exception:
+            logger.exception("Memory search failed")
+        return results
+
+    def store(self, content: str) -> bool:
+        """Store a piece of information as a conversation summary.
+
+        This is the unified store method called by app.py for SAVE_MEMORY and auto-save.
+        Stores to the conversations table with auto-generated topic tags.
+        """
+        try:
+            # Auto-generate topic tags from content keywords
+            words = content.lower().split()
+            stop_words = {"the", "a", "an", "is", "was", "are", "were", "be", "been",
+                          "i", "me", "my", "we", "our", "you", "your", "he", "she",
+                          "it", "they", "them", "to", "of", "in", "for", "on", "with",
+                          "at", "by", "from", "as", "into", "and", "or", "but", "not",
+                          "this", "that", "these", "those", "have", "has", "had", "do",
+                          "does", "did", "will", "would", "could", "should", "may",
+                          "might", "can", "shall", "about", "which", "what", "when",
+                          "where", "who", "whom", "how", "if", "then", "so", "just"}
+            keywords = [w.strip(".,!?;:'\"") for w in words
+                        if len(w) > 2 and w.strip(".,!?;:'\"") not in stop_words]
+            topics = list(dict.fromkeys(keywords))[:5]  # dedupe, keep top 5
+
+            return self.save_conversation(summary=content[:500], topics=topics, importance=2)
+        except Exception:
+            logger.exception("Memory store failed")
+            return False
+
+    def update(self, item_id: int, content: str) -> bool:
+        """Update an existing conversation memory by ID."""
+        try:
+            with self._lock, sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE conversations SET summary = ? WHERE id = ?",
+                    (content, item_id),
+                )
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception:
+            logger.exception("Memory update failed")
+            return False
+
+    def delete(self, item_id: int) -> bool:
+        """Delete a conversation memory by ID."""
+        try:
+            with self._lock, sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM conversations WHERE id = ?", (item_id,))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception:
+            logger.exception("Memory delete failed")
+            return False
+
+    def forget(self, query: str) -> int:
+        """Delete all memories matching a query. Returns count of deleted items."""
+        deleted = 0
+        try:
+            with self._lock, sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                pattern = f"%{query}%"
+                cursor.execute(
+                    "DELETE FROM conversations WHERE summary LIKE ? OR topics LIKE ?",
+                    (pattern, pattern),
+                )
+                deleted += cursor.rowcount
+                cursor.execute(
+                    "DELETE FROM notes WHERE title LIKE ? OR content LIKE ?",
+                    (pattern, pattern),
+                )
+                deleted += cursor.rowcount
+                conn.commit()
+        except Exception:
+            logger.exception("Memory forget failed")
+        return deleted
+
     def _cleanup_old_memories(self, conn: sqlite3.Connection) -> None:
         """Remove old low-importance conversations to keep DB size manageable."""
         try:

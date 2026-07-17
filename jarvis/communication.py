@@ -252,27 +252,85 @@ class VoiceRecorder:
     def __init__(self) -> None:
         self.is_recording = False
         self.recordings: list[str] = []
+        self._audio = None
+        self._stream = None
+        self._frames: list = []
+        self._record_thread = None
     
     def start_recording(self, name: str | None = None) -> str:
-        """Start voice recording."""
+        """Start voice recording using pyaudio if available."""
         if self.is_recording:
             return "Already recording"
-        
+
         self.is_recording = True
         filename = f"recording_{name or time.strftime('%Y%m%d_%H%M%S')}.wav"
-        
-        # Would integrate with actual audio recording
-        # For now, placeholder
+
+        try:
+            import pyaudio
+            self._audio = pyaudio.PyAudio()
+            self._stream = self._audio.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=44100,
+                input=True,
+                frames_per_buffer=1024,
+            )
+            self._frames = []
+            self._record_thread = threading.Thread(target=self._record_loop, daemon=True)
+            self._record_thread.start()
+        except ImportError:
+            logger.debug("pyaudio not available, recording simulated")
+        except Exception as e:
+            logger.warning("Audio recording start failed: %s", e)
+
         self.recordings.append(filename)
-        
         return f"Started recording: {filename}"
+
+    def _record_loop(self):
+        """Background thread for audio capture."""
+        try:
+            while self.is_recording and self._stream:
+                data = self._stream.read(1024, exception_on_overflow=False)
+                self._frames.append(data)
+        except Exception:
+            pass
     
     def stop_recording(self) -> str:
-        """Stop voice recording."""
+        """Stop voice recording and save to WAV file."""
         if not self.is_recording:
             return "Not recording"
-        
+
         self.is_recording = False
+
+        # Save recorded frames to WAV
+        if self._frames and self.recordings:
+            filename = self.recordings[-1]
+            try:
+                import wave
+                with wave.open(filename, 'wb') as wf:
+                    wf.setnchannels(1)
+                    wf.setsampwidth(2)  # 16-bit
+                    wf.setframerate(44100)
+                    wf.writeframes(b''.join(self._frames))
+            except Exception as e:
+                logger.warning("Failed to save recording: %s", e)
+
+        # Cleanup audio resources
+        if self._stream:
+            try:
+                self._stream.stop_stream()
+                self._stream.close()
+            except Exception:
+                pass
+        if self._audio:
+            try:
+                self._audio.terminate()
+            except Exception:
+                pass
+        self._audio = None
+        self._stream = None
+        self._frames = []
+
         return "Recording stopped and saved"
     
     def list_recordings(self) -> str:

@@ -285,6 +285,25 @@ _KNOWN_WORDS: set[str] = {
     # Folders
     "downloads", "documents", "desktop", "pictures", "music", "videos",
     "home", "recycle", "bin",
+    # Common nouns & adjectives (prevent spell-corrector mangling)
+    "black", "white", "red", "blue", "green", "yellow", "orange", "purple",
+    "pink", "brown", "gray", "grey", "silver", "gold",
+    "star", "hole", "cosmic", "galaxy", "planet", "space", "universe",
+    "moon", "sun", "earth", "mars", "jupiter", "saturn", "neptune",
+    "voyager", "photon", "neutron", "proton", "electron",
+    "blackhole", "nebula", "comet", "asteroid",
+    "war", "wars", "force", "jedi", "sith",
+    "rock", "metal", "jazz", "pop", "hip", "hop", "lofi",
+    "ocean", "river", "mountain", "forest", "desert",
+    "cat", "dog", "bird", "fish", "lion", "tiger", "bear",
+    "house", "car", "bike", "train", "plane", "boat",
+    "apple", "banana", "orange", "pizza", "pasta", "rice",
+    "name", "user", "person", "people", "friend", "bro",
+    "machine", "learning", "artificial", "intelligence",
+    "quantum", "physics", "chemistry", "biology",
+    "history", "geography", "math", "science",
+    "hero", "villain", "character", "story", "book",
+    "game", "movie", "anime", "manga",
     # Common
     "time", "date", "day", "today", "tomorrow", "yesterday",
     "weather", "temperature", "forecast",
@@ -372,7 +391,22 @@ def _expand_contractions(text: str) -> str:
 
 
 def _remove_fillers(text: str) -> str:
-    """Remove filler words and phrases."""
+    """Remove filler words and phrases.
+
+    Preserves fillers when they ARE the entire input (e.g. 'thanks',
+    'hey jarvis') since those are meaningful greetings/acknowledgements.
+    """
+    stripped = text.strip()
+    # If the entire text is just fillers, don't strip them
+    test = stripped
+    for filler in _FILLERS:
+        pattern = rf"\b{re.escape(filler)}\b"
+        test = re.sub(pattern, "", test, flags=re.IGNORECASE)
+    test = test.strip()
+    if not test:
+        # The entire text was fillers — keep original
+        return text
+
     for filler in sorted(_FILLERS, key=len, reverse=True):
         pattern = rf"\b{re.escape(filler)}\b"
         text = re.sub(pattern, "", text, flags=re.IGNORECASE)
@@ -460,7 +494,7 @@ def _correct_spelling(text: str) -> str:
             corrected.append(word)
             continue
         # Try to find close matches with high threshold to avoid false corrections
-        matches = get_close_matches(word, _KNOWN_WORDS, n=1, cutoff=0.88)
+        matches = get_close_matches(word, _KNOWN_WORDS, n=1, cutoff=0.93)
         if matches:
             corrected.append(matches[0])
         else:

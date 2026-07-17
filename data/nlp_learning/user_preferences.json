@@ -1,0 +1,16 @@
+{
+  "app:music_app": {
+    "key": "app:music_app",
+    "value": "music",
+    "confidence": 1.0,
+    "usage_count": 135,
+    "last_used": 1784095387.9016995
+  },
+  "app:browser": {
+    "key": "app:browser",
+    "value": "chrome",
+    "confidence": 1.0,
+    "usage_count": 23,
+    "last_used": 1784091115.0506868
+  }
+}

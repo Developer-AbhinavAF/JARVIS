@@ -108,6 +108,11 @@ interface ChatResponse {
   response: string;
   actions?: MessageAction[];
   suggestions?: string[];
+  intent?: string;
+  intent_confidence?: number;
+  tool?: string;
+  verified?: boolean;
+  total_ms?: number;
 }
 
 export default function ChatPanel() {
@@ -230,7 +235,7 @@ export default function ChatPanel() {
         const response: ChatResponse = await res.json();
         setUploadedFile(null);
         if (response.actions && response.actions.length > 0) response.actions.forEach(executeFrontendAction);
-        addMessage({ role: 'assistant', content: '', actions: { copy: true, speak: true, delete: true } as MessageActions, actionButtons: response.actions });
+        addMessage({ role: 'assistant', content: '', actions: { copy: true, speak: true, delete: true } as MessageActions, actionButtons: response.actions, intent: response.intent, intent_confidence: response.intent_confidence, tool: response.tool, verified: response.verified, total_ms: response.total_ms });
         const fullResponse = response.response;
         let currentIndex = 0;
         typingIntervalRef.current = window.setInterval(() => {
@@ -256,6 +261,7 @@ export default function ChatPanel() {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '', fullResponse = '', actions: MessageAction[] = [], displayIndex = 0, streamDone = false;
+        let metaIntent = '', metaConfidence = 0, metaTool = '', metaVerified = false, metaMs = 0;
         clearTypingInterval();
         typingIntervalRef.current = window.setInterval(() => {
           if (displayIndex < fullResponse.length) {
@@ -284,6 +290,11 @@ export default function ChatPanel() {
               if (data.done) {
                 fullResponse = data.response || fullResponse;
                 actions = data.actions || [];
+                metaIntent = data.intent || '';
+                metaConfidence = data.intent_confidence || 0;
+                metaTool = data.tool || '';
+                metaVerified = data.verified || false;
+                metaMs = data.total_ms || 0;
               }
             } catch { /* skip malformed SSE */ }
           }
@@ -292,7 +303,7 @@ export default function ChatPanel() {
         const { messages } = useStore.getState();
         if (messages.length > 0) {
           const lastIndex = messages.length - 1;
-          useStore.setState({ messages: messages.map((m, i) => i === lastIndex ? { ...m, content: fullResponse, actionButtons: actions } : m) });
+          useStore.setState({ messages: messages.map((m, i) => i === lastIndex ? { ...m, content: fullResponse, actionButtons: actions, intent: metaIntent, intent_confidence: metaConfidence, tool: metaTool, verified: metaVerified, total_ms: metaMs } : m) });
         }
         if (actions.length > 0) actions.forEach(executeFrontendAction);
       }
@@ -515,7 +526,7 @@ export default function ChatPanel() {
           )}
         </AnimatePresence>
 
-        <div className="flex items-end ml-72 mb-4 bottom-4 gap-2 glass-panel rounded-2xl p-2 max-w-2xl">
+        <div className="flex items-end ml-72 bottom-4 gap-2 glass-panel rounded-2xl p-2 max-w-2xl">
           {/* Mode Indicator */}
           <div
             className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${

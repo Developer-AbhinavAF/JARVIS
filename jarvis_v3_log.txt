@@ -1,0 +1,17 @@
+JARVIS V3 Log — 2026-07-14 23:05:04
+============================================================
+
+2026-07-14 23:05:06,595 | INFO | jarvis.nlp.tool_registry | Tool registered: youtube (jarvis.tools.youtube)
+2026-07-14 23:05:06,595 | INFO | jarvis.nlp.tool_registry | Tool registered: spotify (jarvis.tools.spotify)
+2026-07-14 23:05:06,595 | INFO | jarvis.nlp.tool_registry | Tool registered: web_search (jarvis.tools.web_search)
+2026-07-14 23:05:06,596 | INFO | jarvis.nlp.tool_registry | Tool registered: github (jarvis.tools.github)
+2026-07-14 23:05:06,596 | INFO | jarvis.nlp.tool_registry | Tool registered: open_app (jarvis.tools.open_app)
+2026-07-14 23:05:06,596 | INFO | jarvis.nlp.tool_registry | Tool registered: system_control (jarvis.system_control)
+2026-07-14 23:05:06,597 | INFO | jarvis.nlp.tool_registry | Tool registered: file_management (jarvis.tools.file_management)
+2026-07-14 23:05:06,597 | INFO | jarvis.nlp.tool_registry | Tool registered: memory (jarvis.memory)
+2026-07-14 23:05:06,597 | INFO | jarvis.nlp.tool_registry | Tool registered: calculator (jarvis.tools.calculator)
+2026-07-14 23:05:06,597 | INFO | jarvis.nlp.tool_registry | Tool registered: programming (jarvis.tools.programming)
+2026-07-14 23:05:37,422 | INFO | comtypes.client._code_cache | Imported existing <module 'comtypes.gen' from 'D:\\AI\\JARVIS\\.venv\\Lib\\site-packages\\comtypes\\gen\\__init__.py'>
+2026-07-14 23:05:37,423 | INFO | comtypes.client._code_cache | Using writeable comtypes cache directory: 'D:\AI\JARVIS\.venv\Lib\site-packages\comtypes\gen'
+2026-07-14 23:05:40,392 | INFO | jarvis.nlp | NLP v3: intent=GREETING conf=0.60 tool=greeting emotion=neutral latency=8.3ms
+2026-07-14 23:05:49,505 | WARNING | jarvis.speech.elevenlabs_provider | elevenlabs package not installed
