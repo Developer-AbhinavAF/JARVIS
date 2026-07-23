@@ -1,0 +1,11 @@
+{
+  "language": "en",
+  "formality": "professional",
+  "humor": "light",
+  "verbosity": "concise",
+  "response_style": "natural",
+  "preferred_tools": {},
+  "avoid_tools": [],
+  "created_at": null,
+  "updated_at": null
+}

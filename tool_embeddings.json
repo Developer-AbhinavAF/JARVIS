@@ -1,0 +1,824 @@
+{
+  "open_app": {
+    "metadata": {
+      "name": "open_app",
+      "description": "Open an application by name like Chrome, VSCode, Notepad, Calculator, etc.",
+      "category": "applications",
+      "keywords": [
+        "launch",
+        "start",
+        "run",
+        "execute",
+        "app",
+        "application",
+        "program",
+        "software"
+      ]
+    },
+    "text": "open_app: Open an application by name like Chrome, VSCode, Notepad, Calculator, etc.. Keywords: launch, start, run, execute, app, application, program, software. Category: applications",
+    "keywords": [
+      "launch",
+      "start",
+      "run",
+      "execute",
+      "app",
+      "application",
+      "program",
+      "software"
+    ],
+    "category": "applications"
+  },
+  "close_app": {
+    "metadata": {
+      "name": "close_app",
+      "description": "Close an application by name",
+      "category": "applications",
+      "keywords": [
+        "quit",
+        "exit",
+        "terminate",
+        "kill",
+        "close",
+        "shutdown"
+      ]
+    },
+    "text": "close_app: Close an application by name. Keywords: quit, exit, terminate, kill, close, shutdown. Category: applications",
+    "keywords": [
+      "quit",
+      "exit",
+      "terminate",
+      "kill",
+      "close",
+      "shutdown"
+    ],
+    "category": "applications"
+  },
+  "open_url": {
+    "metadata": {
+      "name": "open_url",
+      "description": "Open a website URL like YouTube, GitHub, Google, Reddit, etc.",
+      "category": "browser",
+      "keywords": [
+        "website",
+        "webpage",
+        "browse",
+        "visit",
+        "goto",
+        "go to",
+        "url",
+        "link"
+      ]
+    },
+    "text": "open_url: Open a website URL like YouTube, GitHub, Google, Reddit, etc.. Keywords: website, webpage, browse, visit, goto, go to, url, link. Category: browser",
+    "keywords": [
+      "website",
+      "webpage",
+      "browse",
+      "visit",
+      "goto",
+      "go to",
+      "url",
+      "link"
+    ],
+    "category": "browser"
+  },
+  "web_search": {
+    "metadata": {
+      "name": "web_search",
+      "description": "Search the web for information on Google or general web search",
+      "category": "search",
+      "keywords": [
+        "google",
+        "search",
+        "find",
+        "look up",
+        "query",
+        "information",
+        "research"
+      ]
+    },
+    "text": "web_search: Search the web for information on Google or general web search. Keywords: google, search, find, look up, query, information, research. Category: search",
+    "keywords": [
+      "google",
+      "search",
+      "find",
+      "look up",
+      "query",
+      "information",
+      "research"
+    ],
+    "category": "search"
+  },
+  "get_system_stats": {
+    "metadata": {
+      "name": "get_system_stats",
+      "description": "Get CPU, RAM, disk, battery, and system stats",
+      "category": "system",
+      "keywords": [
+        "cpu",
+        "ram",
+        "memory",
+        "disk",
+        "battery",
+        "performance",
+        "stats",
+        "status",
+        "health"
+      ]
+    },
+    "text": "get_system_stats: Get CPU, RAM, disk, battery, and system stats. Keywords: cpu, ram, memory, disk, battery, performance, stats, status, health. Category: system",
+    "keywords": [
+      "cpu",
+      "ram",
+      "memory",
+      "disk",
+      "battery",
+      "performance",
+      "stats",
+      "status",
+      "health"
+    ],
+    "category": "system"
+  },
+  "adjust_volume": {
+    "metadata": {
+      "name": "adjust_volume",
+      "description": "Adjust system volume up/down/mute",
+      "category": "system",
+      "keywords": [
+        "volume",
+        "sound",
+        "audio",
+        "mute",
+        "unmute",
+        "loud",
+        "quiet"
+      ]
+    },
+    "text": "adjust_volume: Adjust system volume up/down/mute. Keywords: volume, sound, audio, mute, unmute, loud, quiet. Category: system",
+    "keywords": [
+      "volume",
+      "sound",
+      "audio",
+      "mute",
+      "unmute",
+      "loud",
+      "quiet"
+    ],
+    "category": "system"
+  },
+  "take_screenshot": {
+    "metadata": {
+      "name": "take_screenshot",
+      "description": "Take a screenshot of the screen",
+      "category": "vision",
+      "keywords": [
+        "screenshot",
+        "capture",
+        "snap",
+        "screen",
+        "picture",
+        "image"
+      ]
+    },
+    "text": "take_screenshot: Take a screenshot of the screen. Keywords: screenshot, capture, snap, screen, picture, image. Category: vision",
+    "keywords": [
+      "screenshot",
+      "capture",
+      "snap",
+      "screen",
+      "picture",
+      "image"
+    ],
+    "category": "vision"
+  },
+  "list_running_apps": {
+    "metadata": {
+      "name": "list_running_apps",
+      "description": "List all running applications",
+      "category": "desktop",
+      "keywords": [
+        "running",
+        "active",
+        "processes",
+        "tasks",
+        "applications",
+        "programs"
+      ]
+    },
+    "text": "list_running_apps: List all running applications. Keywords: running, active, processes, tasks, applications, programs. Category: desktop",
+    "keywords": [
+      "running",
+      "active",
+      "processes",
+      "tasks",
+      "applications",
+      "programs"
+    ],
+    "category": "desktop"
+  },
+  "get_active_app": {
+    "metadata": {
+      "name": "get_active_app",
+      "description": "Get the currently active application",
+      "category": "desktop",
+      "keywords": [
+        "active",
+        "current",
+        "focused",
+        "foreground",
+        "window"
+      ]
+    },
+    "text": "get_active_app: Get the currently active application. Keywords: active, current, focused, foreground, window. Category: desktop",
+    "keywords": [
+      "active",
+      "current",
+      "focused",
+      "foreground",
+      "window"
+    ],
+    "category": "desktop"
+  },
+  "get_time": {
+    "metadata": {
+      "name": "get_time",
+      "description": "Get current time",
+      "category": "utility",
+      "keywords": [
+        "time",
+        "clock",
+        "hour",
+        "minute",
+        "now"
+      ]
+    },
+    "text": "get_time: Get current time. Keywords: time, clock, hour, minute, now. Category: utility",
+    "keywords": [
+      "time",
+      "clock",
+      "hour",
+      "minute",
+      "now"
+    ],
+    "category": "utility"
+  },
+  "get_date": {
+    "metadata": {
+      "name": "get_date",
+      "description": "Get current date",
+      "category": "utility",
+      "keywords": [
+        "date",
+        "day",
+        "month",
+        "year",
+        "calendar",
+        "today"
+      ]
+    },
+    "text": "get_date: Get current date. Keywords: date, day, month, year, calendar, today. Category: utility",
+    "keywords": [
+      "date",
+      "day",
+      "month",
+      "year",
+      "calendar",
+      "today"
+    ],
+    "category": "utility"
+  },
+  "calculate": {
+    "metadata": {
+      "name": "calculate",
+      "description": "Perform mathematical calculation",
+      "category": "utility",
+      "keywords": [
+        "math",
+        "calculation",
+        "compute",
+        "add",
+        "subtract",
+        "multiply",
+        "divide",
+        "equation"
+      ]
+    },
+    "text": "calculate: Perform mathematical calculation. Keywords: math, calculation, compute, add, subtract, multiply, divide, equation. Category: utility",
+    "keywords": [
+      "math",
+      "calculation",
+      "compute",
+      "add",
+      "subtract",
+      "multiply",
+      "divide",
+      "equation"
+    ],
+    "category": "utility"
+  },
+  "create_file": {
+    "metadata": {
+      "name": "create_file",
+      "description": "Create a new file",
+      "category": "files",
+      "keywords": [
+        "create",
+        "new",
+        "make",
+        "write",
+        "file",
+        "document"
+      ]
+    },
+    "text": "create_file: Create a new file. Keywords: create, new, make, write, file, document. Category: files",
+    "keywords": [
+      "create",
+      "new",
+      "make",
+      "write",
+      "file",
+      "document"
+    ],
+    "category": "files"
+  },
+  "read_file": {
+    "metadata": {
+      "name": "read_file",
+      "description": "Read file contents",
+      "category": "files",
+      "keywords": [
+        "read",
+        "open",
+        "view",
+        "file",
+        "document",
+        "contents"
+      ]
+    },
+    "text": "read_file: Read file contents. Keywords: read, open, view, file, document, contents. Category: files",
+    "keywords": [
+      "read",
+      "open",
+      "view",
+      "file",
+      "document",
+      "contents"
+    ],
+    "category": "files"
+  },
+  "delete_file": {
+    "metadata": {
+      "name": "delete_file",
+      "description": "Delete a file",
+      "category": "files",
+      "keywords": [
+        "delete",
+        "remove",
+        "erase",
+        "file",
+        "document"
+      ]
+    },
+    "text": "delete_file: Delete a file. Keywords: delete, remove, erase, file, document. Category: files",
+    "keywords": [
+      "delete",
+      "remove",
+      "erase",
+      "file",
+      "document"
+    ],
+    "category": "files"
+  },
+  "recall_memory": {
+    "metadata": {
+      "name": "recall_memory",
+      "description": "Recall stored memories about user preferences, information, and personal data",
+      "category": "memory",
+      "keywords": [
+        "remember",
+        "recall",
+        "what",
+        "name",
+        "email",
+        "address",
+        "phone",
+        "preference",
+        "personal"
+      ]
+    },
+    "text": "recall_memory: Recall stored memories about user preferences, information, and personal data. Keywords: remember, recall, what, name, email, address, phone, preference, personal. Category: memory",
+    "keywords": [
+      "remember",
+      "recall",
+      "what",
+      "name",
+      "email",
+      "address",
+      "phone",
+      "preference",
+      "personal"
+    ],
+    "category": "memory"
+  },
+  "save_memory": {
+    "metadata": {
+      "name": "save_memory",
+      "description": "Save something to memory for future recall",
+      "category": "memory",
+      "keywords": [
+        "remember",
+        "save",
+        "store",
+        "keep",
+        "memory",
+        "note",
+        "preference"
+      ]
+    },
+    "text": "save_memory: Save something to memory for future recall. Keywords: remember, save, store, keep, memory, note, preference. Category: memory",
+    "keywords": [
+      "remember",
+      "save",
+      "store",
+      "keep",
+      "memory",
+      "note",
+      "preference"
+    ],
+    "category": "memory"
+  },
+  "delete_memory": {
+    "metadata": {
+      "name": "delete_memory",
+      "description": "Delete memories by search query",
+      "category": "memory",
+      "keywords": [
+        "forget",
+        "delete",
+        "remove",
+        "erase",
+        "memory"
+      ]
+    },
+    "text": "delete_memory: Delete memories by search query. Keywords: forget, delete, remove, erase, memory. Category: memory",
+    "keywords": [
+      "forget",
+      "delete",
+      "remove",
+      "erase",
+      "memory"
+    ],
+    "category": "memory"
+  },
+  "show_image": {
+    "metadata": {
+      "name": "show_image",
+      "description": "Open the last screenshot or image",
+      "category": "vision",
+      "keywords": [
+        "show",
+        "display",
+        "open",
+        "image",
+        "picture",
+        "screenshot",
+        "photo"
+      ]
+    },
+    "text": "show_image: Open the last screenshot or image. Keywords: show, display, open, image, picture, screenshot, photo. Category: vision",
+    "keywords": [
+      "show",
+      "display",
+      "open",
+      "image",
+      "picture",
+      "screenshot",
+      "photo"
+    ],
+    "category": "vision"
+  },
+  "get_system_info": {
+    "metadata": {
+      "name": "get_system_info",
+      "description": "Get system information like OS version, machine type, processor",
+      "category": "system",
+      "keywords": [
+        "system",
+        "info",
+        "information",
+        "os",
+        "operating system",
+        "version",
+        "processor"
+      ]
+    },
+    "text": "get_system_info: Get system information like OS version, machine type, processor. Keywords: system, info, information, os, operating system, version, processor. Category: system",
+    "keywords": [
+      "system",
+      "info",
+      "information",
+      "os",
+      "operating system",
+      "version",
+      "processor"
+    ],
+    "category": "system"
+  },
+  "play_media": {
+    "metadata": {
+      "name": "play_media",
+      "description": "Play music or video media on YouTube",
+      "category": "media",
+      "keywords": [
+        "play",
+        "music",
+        "video",
+        "song",
+        "audio",
+        "youtube",
+        "entertainment"
+      ]
+    },
+    "text": "play_media: Play music or video media on YouTube. Keywords: play, music, video, song, audio, youtube, entertainment. Category: media",
+    "keywords": [
+      "play",
+      "music",
+      "video",
+      "song",
+      "audio",
+      "youtube",
+      "entertainment"
+    ],
+    "category": "media"
+  },
+  "screen_analysis": {
+    "metadata": {
+      "name": "screen_analysis",
+      "description": "Analyze the screen content using vision capabilities",
+      "category": "vision",
+      "keywords": [
+        "analyze",
+        "screen",
+        "content",
+        "vision",
+        "ocr",
+        "text",
+        "detect"
+      ]
+    },
+    "text": "screen_analysis: Analyze the screen content using vision capabilities. Keywords: analyze, screen, content, vision, ocr, text, detect. Category: vision",
+    "keywords": [
+      "analyze",
+      "screen",
+      "content",
+      "vision",
+      "ocr",
+      "text",
+      "detect"
+    ],
+    "category": "vision"
+  },
+  "adjust_brightness": {
+    "metadata": {
+      "name": "adjust_brightness",
+      "description": "Adjust screen brightness up/down",
+      "category": "system",
+      "keywords": [
+        "brightness",
+        "screen",
+        "display",
+        "light",
+        "dim",
+        "bright"
+      ]
+    },
+    "text": "adjust_brightness: Adjust screen brightness up/down. Keywords: brightness, screen, display, light, dim, bright. Category: system",
+    "keywords": [
+      "brightness",
+      "screen",
+      "display",
+      "light",
+      "dim",
+      "bright"
+    ],
+    "category": "system"
+  },
+  "ask_ai": {
+    "metadata": {
+      "name": "ask_ai",
+      "description": "Ask an AI question for general knowledge, explanations, and information",
+      "category": "utility",
+      "keywords": [
+        "ai",
+        "question",
+        "ask",
+        "tell",
+        "explain",
+        "what",
+        "why",
+        "how",
+        "knowledge"
+      ]
+    },
+    "text": "ask_ai: Ask an AI question for general knowledge, explanations, and information. Keywords: ai, question, ask, tell, explain, what, why, how, knowledge. Category: utility",
+    "keywords": [
+      "ai",
+      "question",
+      "ask",
+      "tell",
+      "explain",
+      "what",
+      "why",
+      "how",
+      "knowledge"
+    ],
+    "category": "utility"
+  },
+  "image_search": {
+    "metadata": {
+      "name": "image_search",
+      "description": "Search for images on Google Images",
+      "category": "search",
+      "keywords": [
+        "image",
+        "picture",
+        "photo",
+        "search",
+        "find",
+        "visual"
+      ]
+    },
+    "text": "image_search: Search for images on Google Images. Keywords: image, picture, photo, search, find, visual. Category: search",
+    "keywords": [
+      "image",
+      "picture",
+      "photo",
+      "search",
+      "find",
+      "visual"
+    ],
+    "category": "search"
+  },
+  "file_operation": {
+    "metadata": {
+      "name": "file_operation",
+      "description": "Perform file operations (create/read/delete)",
+      "category": "files",
+      "keywords": [
+        "file",
+        "operation",
+        "create",
+        "read",
+        "delete",
+        "manage"
+      ]
+    },
+    "text": "file_operation: Perform file operations (create/read/delete). Keywords: file, operation, create, read, delete, manage. Category: files",
+    "keywords": [
+      "file",
+      "operation",
+      "create",
+      "read",
+      "delete",
+      "manage"
+    ],
+    "category": "files"
+  },
+  "copy_to_clipboard": {
+    "metadata": {
+      "name": "copy_to_clipboard",
+      "description": "Copy text to clipboard",
+      "category": "utility",
+      "keywords": [
+        "copy",
+        "clipboard",
+        "paste",
+        "text",
+        "buffer"
+      ]
+    },
+    "text": "copy_to_clipboard: Copy text to clipboard. Keywords: copy, clipboard, paste, text, buffer. Category: utility",
+    "keywords": [
+      "copy",
+      "clipboard",
+      "paste",
+      "text",
+      "buffer"
+    ],
+    "category": "utility"
+  },
+  "paste_from_clipboard": {
+    "metadata": {
+      "name": "paste_from_clipboard",
+      "description": "Paste text from clipboard",
+      "category": "utility",
+      "keywords": [
+        "paste",
+        "clipboard",
+        "copy",
+        "text",
+        "buffer"
+      ]
+    },
+    "text": "paste_from_clipboard: Paste text from clipboard. Keywords: paste, clipboard, copy, text, buffer. Category: utility",
+    "keywords": [
+      "paste",
+      "clipboard",
+      "copy",
+      "text",
+      "buffer"
+    ],
+    "category": "utility"
+  },
+  "send_email": {
+    "metadata": {
+      "name": "send_email",
+      "description": "Send email via default email client",
+      "category": "utility",
+      "keywords": [
+        "email",
+        "mail",
+        "send",
+        "message",
+        "compose",
+        "recipient"
+      ]
+    },
+    "text": "send_email: Send email via default email client. Keywords: email, mail, send, message, compose, recipient. Category: utility",
+    "keywords": [
+      "email",
+      "mail",
+      "send",
+      "message",
+      "compose",
+      "recipient"
+    ],
+    "category": "utility"
+  },
+  "system_sleep": {
+    "metadata": {
+      "name": "system_sleep",
+      "description": "Put system to sleep (requires confirmation)",
+      "category": "system",
+      "keywords": [
+        "sleep",
+        "suspend",
+        "hibernate",
+        "power",
+        "rest"
+      ]
+    },
+    "text": "system_sleep: Put system to sleep (requires confirmation). Keywords: sleep, suspend, hibernate, power, rest. Category: system",
+    "keywords": [
+      "sleep",
+      "suspend",
+      "hibernate",
+      "power",
+      "rest"
+    ],
+    "category": "system"
+  },
+  "system_shutdown": {
+    "metadata": {
+      "name": "system_shutdown",
+      "description": "Shutdown system (requires confirmation)",
+      "category": "system",
+      "keywords": [
+        "shutdown",
+        "power off",
+        "turn off",
+        "shut down"
+      ]
+    },
+    "text": "system_shutdown: Shutdown system (requires confirmation). Keywords: shutdown, power off, turn off, shut down. Category: system",
+    "keywords": [
+      "shutdown",
+      "power off",
+      "turn off",
+      "shut down"
+    ],
+    "category": "system"
+  },
+  "system_lock": {
+    "metadata": {
+      "name": "system_lock",
+      "description": "Lock system (requires confirmation)",
+      "category": "system",
+      "keywords": [
+        "lock",
+        "screen lock",
+        "secure",
+        "password"
+      ]
+    },
+    "text": "system_lock: Lock system (requires confirmation). Keywords: lock, screen lock, secure, password. Category: system",
+    "keywords": [
+      "lock",
+      "screen lock",
+      "secure",
+      "password"
+    ],
+    "category": "system"
+  }
+}

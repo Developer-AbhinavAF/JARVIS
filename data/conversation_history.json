@@ -1,0 +1,702 @@
+[
+  {
+    "role": "user",
+    "content": "tumko mere baarein mein kya kya pta hai",
+    "intent": "recall_memory",
+    "tool": "",
+    "timestamp": "2026-07-19T17:29:55.415496"
+  },
+  {
+    "role": "assistant",
+    "content": "Mujhe aapke baare mein yeh pata hai: aapka naam Abhinav And hai, aapka sapna AGI banana hai, aur aapke interests mein anime hai. Aapka location Tools Test hai.",
+    "intent": "recall_memory",
+    "tool": "",
+    "timestamp": "2026-07-19T17:29:55.438164"
+  },
+  {
+    "role": "user",
+    "content": "open youtube",
+    "intent": "open_website",
+    "tool": "open_url",
+    "timestamp": "2026-07-19T17:30:25.067266"
+  },
+  {
+    "role": "assistant",
+    "content": "YouTube khol raha hoon!",
+    "intent": "open_website",
+    "tool": "open_url",
+    "timestamp": "2026-07-19T17:30:25.093280"
+  },
+  {
+    "role": "user",
+    "content": "open youtube and search Interstellar trailer",
+    "intent": "open_and_search_youtube",
+    "tool": "open_url",
+    "timestamp": "2026-07-19T17:30:52.080135"
+  },
+  {
+    "role": "assistant",
+    "content": "YouTube khol raha hoon aur Interstellar trailer dhundh raha hoon!",
+    "intent": "open_and_search_youtube",
+    "tool": "open_url",
+    "timestamp": "2026-07-19T17:30:52.102160"
+  },
+  {
+    "role": "user",
+    "content": "helloo",
+    "intent": "greeting",
+    "tool": "",
+    "timestamp": "2026-07-19T19:18:46.900861"
+  },
+  {
+    "role": "assistant",
+    "content": "Namaste Abhinav And! Kaise ho aap?",
+    "intent": "greeting",
+    "tool": "",
+    "timestamp": "2026-07-19T19:18:46.930077"
+  },
+  {
+    "role": "user",
+    "content": "hellooooo",
+    "intent": "greeting",
+    "tool": "",
+    "timestamp": "2026-07-19T20:28:12.779975"
+  },
+  {
+    "role": "assistant",
+    "content": "Namaste Abhinav And! Kaise ho aap?",
+    "intent": "greeting",
+    "tool": "",
+    "timestamp": "2026-07-19T20:28:12.811253"
+  },
+  {
+    "role": "user",
+    "content": "helloo",
+    "intent": "greeting",
+    "tool": "",
+    "timestamp": "2026-07-19T20:47:15.358317"
+  },
+  {
+    "role": "assistant",
+    "content": "Namaste Abhinav And! Kaise ho aap?",
+    "intent": "greeting",
+    "tool": "",
+    "timestamp": "2026-07-19T20:47:15.386217"
+  },
+  {
+    "role": "user",
+    "content": "hello",
+    "intent": "greeting",
+    "tool": "",
+    "timestamp": "2026-07-19T21:45:20.423184"
+  },
+  {
+    "role": "assistant",
+    "content": "Namaste Abhinav And! Kaise ho aap?",
+    "intent": "greeting",
+    "tool": "",
+    "timestamp": "2026-07-19T21:45:20.439083"
+  },
+  {
+    "role": "user",
+    "content": "remember call me only abhinav not abhinav and!",
+    "intent": "save_memory",
+    "tool": "",
+    "timestamp": "2026-07-19T21:46:39.025078"
+  },
+  {
+    "role": "assistant",
+    "content": "Dhanyavad Abhinav, main aapko Abhinav ke naam se hi pukarunga!",
+    "intent": "save_memory",
+    "tool": "",
+    "timestamp": "2026-07-19T21:46:39.032786"
+  },
+  {
+    "role": "user",
+    "content": "helloo ",
+    "intent": "greeting",
+    "tool": "",
+    "timestamp": "2026-07-20T14:42:35.325014"
+  },
+  {
+    "role": "assistant",
+    "content": "Namaste Abhinav! Kaise ho aap?",
+    "intent": "greeting",
+    "tool": "",
+    "timestamp": "2026-07-20T14:42:35.358624"
+  },
+  {
+    "role": "user",
+    "content": "how are you?",
+    "intent": "chat",
+    "tool": "",
+    "timestamp": "2026-07-20T14:43:21.729630"
+  },
+  {
+    "role": "assistant",
+    "content": "Mujhe theek hai, dhanyavad! Aap kaise hain?",
+    "intent": "chat",
+    "tool": "",
+    "timestamp": "2026-07-20T14:43:21.749472"
+  },
+  {
+    "role": "user",
+    "content": "helloo",
+    "intent": "greeting",
+    "tool": "",
+    "timestamp": "2026-07-20T22:47:10.967473"
+  },
+  {
+    "role": "assistant",
+    "content": "Namaste Abhinav! Kaise ho aap?",
+    "intent": "greeting",
+    "tool": "",
+    "timestamp": "2026-07-20T22:47:10.990290"
+  },
+  {
+    "role": "user",
+    "content": "mera naam aditi hai main abhinav ki wife hu",
+    "intent": "introduce_yourself",
+    "tool": "",
+    "timestamp": "2026-07-20T22:47:54.020052"
+  },
+  {
+    "role": "assistant",
+    "content": "Namaste Aditi! Aapka swagat hai. Main samjha ki aap Abhinav ki wife hain.",
+    "intent": "introduce_yourself",
+    "tool": "",
+    "timestamp": "2026-07-20T22:47:54.030217"
+  },
+  {
+    "role": "user",
+    "content": "mera naam yaad krlijiye",
+    "intent": "recall_memory",
+    "tool": "recall_memory",
+    "timestamp": "2026-07-20T22:49:06.215176"
+  },
+  {
+    "role": "assistant",
+    "content": "name: Abhinav And",
+    "intent": "recall_memory",
+    "tool": "recall_memory",
+    "timestamp": "2026-07-20T22:49:06.229896"
+  },
+  {
+    "role": "user",
+    "content": "remember who i am",
+    "intent": "recall_identity",
+    "tool": "recall_memory",
+    "timestamp": "2026-07-20T22:49:36.575252"
+  },
+  {
+    "role": "assistant",
+    "content": "name: Abhinav And",
+    "intent": "recall_identity",
+    "tool": "recall_memory",
+    "timestamp": "2026-07-20T22:49:36.590459"
+  },
+  {
+    "role": "user",
+    "content": "remember i am aditi and i am wife of abhinav",
+    "intent": "recall_memory",
+    "tool": "save_memory",
+    "timestamp": "2026-07-20T22:49:54.985480"
+  },
+  {
+    "role": "assistant",
+    "content": "Got it! I'll remember your relationship: Abhinav's wife",
+    "intent": "recall_memory",
+    "tool": "save_memory",
+    "timestamp": "2026-07-20T22:49:55.003243"
+  },
+  {
+    "role": "user",
+    "content": "i want to listen music open youtube ",
+    "intent": "open_music_streaming",
+    "tool": "open_url",
+    "timestamp": "2026-07-20T22:50:54.837301"
+  },
+  {
+    "role": "assistant",
+    "content": "YouTube khol raha hoon!",
+    "intent": "open_music_streaming",
+    "tool": "open_url",
+    "timestamp": "2026-07-20T22:50:54.854478"
+  },
+  {
+    "role": "user",
+    "content": "search gamerfleet there ",
+    "intent": "search",
+    "tool": "web_search",
+    "timestamp": "2026-07-20T22:53:06.058983"
+  },
+  {
+    "role": "assistant",
+    "content": "Google par gamerfleet dhundh raha hoon!",
+    "intent": "search",
+    "tool": "web_search",
+    "timestamp": "2026-07-20T22:53:06.081045"
+  },
+  {
+    "role": "user",
+    "content": "what is 2 + 2?",
+    "intent": "math_calculation",
+    "tool": "calculate",
+    "timestamp": "2026-07-20T22:53:47.723647"
+  },
+  {
+    "role": "assistant",
+    "content": "2 + 2 ka jawab hai 4",
+    "intent": "math_calculation",
+    "tool": "calculate",
+    "timestamp": "2026-07-20T22:53:47.738627"
+  },
+  {
+    "role": "user",
+    "content": "If sin x  + cosec x = 2 find the value of sin^2006 x + cosec^2026 x. solve this step by step",
+    "intent": "mathematical calculation",
+    "tool": "calculate",
+    "timestamp": "2026-07-20T22:54:43.349609"
+  },
+  {
+    "role": "assistant",
+    "content": "To find the value of sin^2006 x + cosec^2026 x, we can start by using the given equation sin x + cosec x = 2. First, we can rewrite cosec x as 1/sin x. So the equation becomes sin x + 1/sin x = 2.",
+    "intent": "mathematical calculation",
+    "tool": "calculate",
+    "timestamp": "2026-07-20T22:54:43.370166"
+  },
+  {
+    "role": "user",
+    "content": "plot x(0,3) and y(4,2) on graph ",
+    "intent": "plot_coordinates",
+    "tool": "",
+    "timestamp": "2026-07-20T22:59:02.613994"
+  },
+  {
+    "role": "assistant",
+    "content": "Main x(0,3) aur y(4,2) ko graph par plot kar raha hoon.",
+    "intent": "plot_coordinates",
+    "tool": "",
+    "timestamp": "2026-07-20T22:59:02.629935"
+  },
+  {
+    "role": "user",
+    "content": "open wikipedia",
+    "intent": "open_website",
+    "tool": "open_url",
+    "timestamp": "2026-07-20T23:00:21.734501"
+  },
+  {
+    "role": "assistant",
+    "content": "Wikipedia khol raha hoon!",
+    "intent": "open_website",
+    "tool": "open_url",
+    "timestamp": "2026-07-20T23:00:21.756972"
+  },
+  {
+    "role": "user",
+    "content": "search AGI on wikipedia",
+    "intent": "search_on_wikipedia",
+    "tool": "open_url",
+    "timestamp": "2026-07-20T23:00:53.161310"
+  },
+  {
+    "role": "assistant",
+    "content": "Wikipedia par AGI dhundh raha hoon!",
+    "intent": "search_on_wikipedia",
+    "tool": "open_url",
+    "timestamp": "2026-07-20T23:00:53.180169"
+  },
+  {
+    "role": "user",
+    "content": "search AGI on reddit",
+    "intent": "search_on_reddit",
+    "tool": "open_url",
+    "timestamp": "2026-07-20T23:01:47.983760"
+  },
+  {
+    "role": "assistant",
+    "content": "Reddit par AGI ki search kar raha hoon!",
+    "intent": "search_on_reddit",
+    "tool": "open_url",
+    "timestamp": "2026-07-20T23:01:48.007912"
+  },
+  {
+    "role": "user",
+    "content": "find sonam wanchuk cjp protest on reddit",
+    "intent": "search_reddit",
+    "tool": "open_url",
+    "timestamp": "2026-07-20T23:04:46.655596"
+  },
+  {
+    "role": "assistant",
+    "content": "Reddit par sonam wanchuk cjp protest ki search kar raha hoon!",
+    "intent": "search_reddit",
+    "tool": "open_url",
+    "timestamp": "2026-07-20T23:04:46.675848"
+  },
+  {
+    "role": "user",
+    "content": "who created you",
+    "intent": "creator_query",
+    "tool": "",
+    "timestamp": "2026-07-20T23:13:40.790817"
+  },
+  {
+    "role": "assistant",
+    "content": "Abhinav created me.",
+    "intent": "creator_query",
+    "tool": "",
+    "timestamp": "2026-07-20T23:13:40.806986"
+  },
+  {
+    "role": "user",
+    "content": "what can you do?",
+    "intent": "capabilities",
+    "tool": "",
+    "timestamp": "2026-07-20T23:13:57.291813"
+  },
+  {
+    "role": "assistant",
+    "content": "Main aapki madad karne ke liye yahaan hoon! Main aapke liye internet par search kar sakta hoon, aapke sawaal ka jawab de sakta hoon, aapki yaad dila sakta hoon, email bhej sakta hoon, file bana sakta hoon, calculator ka kaam kar sakta hoon, aapki screen capture kar sakta hoon, aur bahut kuchh! Kuchh specific karne ke liye aap mujse pooch sakte hain.",
+    "intent": "capabilities",
+    "tool": "",
+    "timestamp": "2026-07-20T23:13:57.318036"
+  },
+  {
+    "role": "user",
+    "content": "remember my dream is to build you more and more powerful",
+    "intent": "save_memory",
+    "tool": "",
+    "timestamp": "2026-07-20T23:18:25.067742"
+  },
+  {
+    "role": "assistant",
+    "content": "Apka sapna yaad rakh liya hai, Aditi! Aapka sapna hai mujhe aur bhi shaktishali banaana.",
+    "intent": "save_memory",
+    "tool": "",
+    "timestamp": "2026-07-20T23:18:25.089963"
+  },
+  {
+    "role": "user",
+    "content": "what did i ask you 4 prompts ago ",
+    "intent": "CHAT",
+    "tool": "chat",
+    "timestamp": "2026-07-20T23:20:25.967228"
+  },
+  {
+    "role": "assistant",
+    "content": "I'm not sure about that right now.",
+    "intent": "CHAT",
+    "tool": "chat",
+    "timestamp": "2026-07-20T23:20:25.983489"
+  },
+  {
+    "role": "user",
+    "content": "If all cats are animals and Tom is a cat, what is Tom?",
+    "intent": "chat",
+    "tool": "",
+    "timestamp": "2026-07-20T23:21:36.183452"
+  },
+  {
+    "role": "assistant",
+    "content": "Tom hai animal.",
+    "intent": "chat",
+    "tool": "",
+    "timestamp": "2026-07-20T23:21:36.199253"
+  },
+  {
+    "role": "user",
+    "content": "which is heavier 1kg iron or 1kg cotton",
+    "intent": "compare_weights",
+    "tool": "",
+    "timestamp": "2026-07-20T23:22:13.765117"
+  },
+  {
+    "role": "assistant",
+    "content": "Dono samaan hai, 1kg iron aur 1kg cotton dono ka vajan 1kg hai.",
+    "intent": "compare_weights",
+    "tool": "",
+    "timestamp": "2026-07-20T23:22:13.782246"
+  },
+  {
+    "role": "user",
+    "content": "yes you are right but you have made mistake, remember that every object have air resistance which push them opposite to gravity and the large the area the less the pressure, so by this 1 kg cotton is heavier it have two answers.",
+    "intent": "chat",
+    "tool": "",
+    "timestamp": "2026-07-20T23:24:21.760311"
+  },
+  {
+    "role": "assistant",
+    "content": "Lekin Abhinav, aapka yeh sawal thoda bhramit karne wala hai. Hamein samjhana hoga ki 1kg iron aur 1kg cotton dono ka weight same hai, lekin aapke hisab se air resistance ke kaaran cotton ki weight thodi zyada lagti hai, lekin yeh ek theoretical baat hai. Practically, ham dono ka weight 1kg hi maanenge.",
+    "intent": "chat",
+    "tool": "",
+    "timestamp": "2026-07-20T23:24:21.796270"
+  },
+  {
+    "role": "user",
+    "content": "would you save 1 person or 100 person??",
+    "intent": "moral_dilemma",
+    "tool": "",
+    "timestamp": "2026-07-20T23:25:51.525019"
+  },
+  {
+    "role": "assistant",
+    "content": "Yeh ek bahut hi mushkil sawal hai. Mere hisab se, main 100 logon ko bachaunga, kyunki yeh adhik logon ki jaan bachane ke liye ek behtar vikalp hai. Lekin yeh ek bahut hi kathin nirnay hai, aur iske liye mujhe apne moral moolyon par vichar karna hoga.",
+    "intent": "moral_dilemma",
+    "tool": "",
+    "timestamp": "2026-07-20T23:25:51.546900"
+  },
+  {
+    "role": "user",
+    "content": "open youtube",
+    "intent": "open_youtube",
+    "tool": "open_url",
+    "timestamp": "2026-07-20T23:27:03.467440"
+  },
+  {
+    "role": "assistant",
+    "content": "YouTube khol raha hoon!",
+    "intent": "open_youtube",
+    "tool": "open_url",
+    "timestamp": "2026-07-20T23:27:03.494201"
+  },
+  {
+    "role": "user",
+    "content": "open youtube",
+    "intent": "open_website",
+    "tool": "open_url",
+    "timestamp": "2026-07-20T23:27:18.787833"
+  },
+  {
+    "role": "assistant",
+    "content": "YouTube khol raha hoon!",
+    "intent": "open_website",
+    "tool": "open_url",
+    "timestamp": "2026-07-20T23:27:18.813595"
+  },
+  {
+    "role": "user",
+    "content": "search there for blackhole",
+    "intent": "search",
+    "tool": "search_youtube",
+    "timestamp": "2026-07-20T23:27:59.930857"
+  },
+  {
+    "role": "assistant",
+    "content": "Searching YouTube for 'blackhole'",
+    "intent": "search",
+    "tool": "search_youtube",
+    "timestamp": "2026-07-20T23:27:59.956251"
+  },
+  {
+    "role": "user",
+    "content": "play the first result",
+    "intent": "play_media",
+    "tool": "play_media",
+    "timestamp": "2026-07-20T23:28:34.404061"
+  },
+  {
+    "role": "assistant",
+    "content": "Failed to execute play_media: play_media() got an unexpected keyword argument 'query'",
+    "intent": "play_media",
+    "tool": "play_media",
+    "timestamp": "2026-07-20T23:28:34.422028"
+  },
+  {
+    "role": "user",
+    "content": "pause it",
+    "intent": "pause_media",
+    "tool": "press_key",
+    "timestamp": "2026-07-20T23:29:22.900208"
+  },
+  {
+    "role": "assistant",
+    "content": "Media pausa kar raha hoon!",
+    "intent": "pause_media",
+    "tool": "press_key",
+    "timestamp": "2026-07-20T23:29:22.965433"
+  },
+  {
+    "role": "user",
+    "content": " increase volume",
+    "intent": "adjust_volume",
+    "tool": "adjust_volume",
+    "timestamp": "2026-07-20T23:29:49.469505"
+  },
+  {
+    "role": "assistant",
+    "content": "Failed to execute adjust_volume: pycaw not available. Cannot control volume on this system.",
+    "intent": "adjust_volume",
+    "tool": "adjust_volume",
+    "timestamp": "2026-07-20T23:29:49.485934"
+  },
+  {
+    "role": "user",
+    "content": "close the tab",
+    "intent": "close_tab",
+    "tool": "close_app",
+    "timestamp": "2026-07-20T23:30:25.368890"
+  },
+  {
+    "role": "assistant",
+    "content": "Failed to execute close_app: ",
+    "intent": "close_tab",
+    "tool": "close_app",
+    "timestamp": "2026-07-20T23:30:25.393869"
+  },
+  {
+    "role": "user",
+    "content": "reopen the tabs",
+    "intent": "reopen_closed_tabs",
+    "tool": "open_url",
+    "timestamp": "2026-07-20T23:30:39.600760"
+  },
+  {
+    "role": "assistant",
+    "content": "YouTube khul raha hoon!",
+    "intent": "reopen_closed_tabs",
+    "tool": "open_url",
+    "timestamp": "2026-07-20T23:30:39.627195"
+  },
+  {
+    "role": "user",
+    "content": "open notepad",
+    "intent": "open_application",
+    "tool": "open_app",
+    "timestamp": "2026-07-20T23:32:56.440500"
+  },
+  {
+    "role": "assistant",
+    "content": "Notepad khol raha hoon!",
+    "intent": "open_application",
+    "tool": "open_app",
+    "timestamp": "2026-07-20T23:32:56.469682"
+  },
+  {
+    "role": "user",
+    "content": "open vs code",
+    "intent": "open_application",
+    "tool": "open_app",
+    "timestamp": "2026-07-20T23:33:15.671717"
+  },
+  {
+    "role": "assistant",
+    "content": "VSCode khol raha hoon!",
+    "intent": "open_application",
+    "tool": "open_app",
+    "timestamp": "2026-07-20T23:33:15.698769"
+  },
+  {
+    "role": "user",
+    "content": "open github",
+    "intent": "open_website",
+    "tool": "open_url",
+    "timestamp": "2026-07-20T23:33:29.902949"
+  },
+  {
+    "role": "assistant",
+    "content": "Github khol raha hoon!",
+    "intent": "open_website",
+    "tool": "open_url",
+    "timestamp": "2026-07-20T23:33:29.930285"
+  },
+  {
+    "role": "user",
+    "content": "open calculator",
+    "intent": "open_calculator",
+    "tool": "open_app",
+    "timestamp": "2026-07-20T23:33:49.644614"
+  },
+  {
+    "role": "assistant",
+    "content": "Calculator khol raha hoon!",
+    "intent": "open_calculator",
+    "tool": "open_app",
+    "timestamp": "2026-07-20T23:33:49.667791"
+  },
+  {
+    "role": "user",
+    "content": "open camera",
+    "intent": "open_app",
+    "tool": "open_app",
+    "timestamp": "2026-07-20T23:34:03.555824"
+  },
+  {
+    "role": "assistant",
+    "content": "Failed to execute open_app: ",
+    "intent": "open_app",
+    "tool": "open_app",
+    "timestamp": "2026-07-20T23:34:03.575325"
+  },
+  {
+    "role": "user",
+    "content": "take screenshot",
+    "intent": "take_screenshot",
+    "tool": "take_screenshot",
+    "timestamp": "2026-07-20T23:34:19.690067"
+  },
+  {
+    "role": "assistant",
+    "content": "Screenshot le raha hoon!",
+    "intent": "take_screenshot",
+    "tool": "take_screenshot",
+    "timestamp": "2026-07-20T23:34:19.697558"
+  },
+  {
+    "role": "user",
+    "content": "analyze it",
+    "intent": "screen_analysis",
+    "tool": "screen_analysis",
+    "timestamp": "2026-07-20T23:35:39.925930"
+  },
+  {
+    "role": "assistant",
+    "content": "Screen captured (1366x768).",
+    "intent": "screen_analysis",
+    "tool": "screen_analysis",
+    "timestamp": "2026-07-20T23:35:39.949153"
+  },
+  {
+    "role": "user",
+    "content": "show me that",
+    "intent": "show",
+    "tool": "screen_analysis",
+    "timestamp": "2026-07-20T23:37:09.080547"
+  },
+  {
+    "role": "assistant",
+    "content": "Screen captured (1366x768).",
+    "intent": "show",
+    "tool": "screen_analysis",
+    "timestamp": "2026-07-20T23:37:09.100765"
+  },
+  {
+    "role": "user",
+    "content": "lock pc",
+    "intent": "CHAT",
+    "tool": "chat",
+    "timestamp": "2026-07-20T23:38:34.401635"
+  },
+  {
+    "role": "assistant",
+    "content": "I'm not sure about that right now.",
+    "intent": "CHAT",
+    "tool": "chat",
+    "timestamp": "2026-07-20T23:38:34.416509"
+  },
+  {
+    "role": "user",
+    "content": "what's on my screen?",
+    "intent": "CHAT",
+    "tool": "chat",
+    "timestamp": "2026-07-20T23:40:04.475193"
+  },
+  {
+    "role": "assistant",
+    "content": "I'm not sure about that right now.",
+    "intent": "CHAT",
+    "tool": "chat",
+    "timestamp": "2026-07-20T23:40:04.491619"
+  }
+]

@@ -1,0 +1,9 @@
+{
+    "provider": "veena",
+    "voice": "agastya",
+    "speech": true,
+    "cache": true,
+    "interrupt": true,
+    "veena_model": "maya-research/Veena",
+    "snac_model": "hubertsiuzdak/snac_24khz"
+}

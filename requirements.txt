@@ -17,6 +17,7 @@ pandas
 Pillow
 prompt_toolkit
 pydantic
+python-dotenv
 PyPDF2
 pyautogui
 pyperclip
@@ -37,4 +38,5 @@ uvicorn
 webrtcvad
 yt-dlp
 winshell
+pygame
 pyttsx3
