@@ -1,0 +1,107 @@
+# =============================================================================
+# JARVIS — Environment Configuration
+# =============================================================================
+# Copy this to .env and fill in your values. Never commit .env to version control.
+# =============================================================================
+
+# ----- AI PROVIDERS (Router) -------------------------------------------------
+# Priority: Groq-1 (10) > Groq-2 (20) > Groq-3 (30) > Mistral (40) >
+#           OpenAI (50) > Anthropic (60) > OpenRouter (70) > DeepSeek (80) > Google (90)
+# Only providers with a non-empty API key are loaded.
+
+# --- Groq (Primary — 3 keys for fallback redundancy) ---
+# Get keys at: https://console.groq.com/keys
+# Priority 10:
+GROQ_API_KEY=
+GROQ_API_KEY_2=
+GROQ_API_KEY_3=
+GROQ_BASE_URL=
+
+# --- Mistral (Secondary, Priority 40) ---
+# Get key at: https://console.mistral.ai/api-keys/
+MISTRAL_API_KEY=
+MISTRAL_BASE_URL=
+
+# --- OpenAI (Priority 50) ---
+# Get key at: https://platform.openai.com/api-keys
+OPENAI_API_KEY=
+OPENAI_BASE_URL=
+
+# --- Anthropic (Priority 60) ---
+# Get key at: https://console.anthropic.com/
+ANTHROPIC_API_KEY=
+ANTHROPIC_BASE_URL=
+
+# --- OpenRouter (Priority 70) ---
+# Get key at: https://openrouter.ai/keys
+OPENROUTER_API_KEY=
+OPENROUTER_BASE_URL=
+
+# --- DeepSeek (Priority 80) ---
+# Get key at: https://platform.deepseek.com/api_keys
+DEEPSEEK_API_KEY=
+DEEPSEEK_BASE_URL=
+
+# --- Google Gemini (Priority 90) ---
+# Get key at: https://aistudio.google.com/apikey
+GOOGLE_API_KEY=
+GOOGLE_AI_BASE_URL=
+
+# ----- Local AI (Ollama — Primary Model) --------------------------------------
+# QWEN2.5:14B via ngrok tunnel is the primary model. Used first for all requests.
+# All API providers (Groq, OpenAI, etc.) are fallbacks if Ollama fails.
+# Install Ollama from: https://ollama.com
+OLLAMA_BASE_URL=
+OLLAMA_MODEL="qwen2.5:14b"
+
+# ----- Speech Engine ---------------------------------------------------------
+# Text-to-Speech options: "elevenlabs" (cloud) or "pyttsx3" (offline)
+TTS_ENGINE="elevenlabs"
+
+# ElevenLabs — https://elevenlabs.io/app/settings/api-keys
+ELEVENLABS_API_KEY=
+# Voice IDs:  (Rachel = 21m00Tcm4TlvDq8ikWAM)
+ELEVENLABS_VOICE_ID=
+ELEVENLABS_MODEL="eleven_multilingual_v2"
+
+# Speech-to-Text (offline, uses Whisper)
+STT_ENGINE="whisper"
+
+# Phone call twilio feature
+
+TWILIO_ACCOUNT_SID=
+TWILIO_AUTH_TOKEN=
+TWILIO_PHONE_NUMBER=
+TWILIO_WEBHOOK=
+MY_PHONE_NUMBER=
+WHISPER_PROVIDER=twilio
+JARVIS_SPEECH_STT_LANG=en-IN
+JARVIS_SPEECH_WHISPER_SIZE=small
+JARVIS_SPEECH_VOICE=en-IN-PrabhatNeural
+
+# ----- Memory Limits ---------------------------------------------------------
+MEMORY_SEARCH_LIMIT=10           # Max results from FTS5 memory search
+MEMORY_SUMMARIZE_LIMIT=50        # Max entries for memory summarization
+MEMORY_CONVERSATIONS_LIMIT=20    # Max recent conversations to load
+MEMORY_NOTES_LIMIT=20            # Max recent notes to load
+
+# ----- Knowledge Engine ------------------------------------------------------
+KNOWLEDGE_SEARCH_LIMIT=10        # Max results from knowledge search
+KNOWLEDGE_MAX_TOKENS=1000        # Max tokens for context window
+
+# ----- Execution Engine ------------------------------------------------------
+EXECUTION_TRACE_LIMIT=100        # Max execution traces to keep in memory
+
+# ----- Desktop Monitor -------------------------------------------------------
+DESKTOP_CACHE_TTL=2.0            # Seconds before refreshing system stats cache
+DESKTOP_PROCESS_LIMIT=10         # Max processes in top-processes list
+
+# ----- NLP Context -----------------------------------------------------------
+CONTEXT_HISTORY_SIZE=20          # Max conversation turns kept in context ring buffer
+
+# ----- JARVIS App ------------------------------------------------------------
+JARVIS_DEBUG=false               # Enable debug mode by default (true/false)
+JARVIS_INTERACTIVE=false         # Start in interactive mode (true/false)
+
+# ----- Logging ---------------------------------------------------------------
+LOG_LEVEL="INFO"                 # DEBUG, INFO, WARNING, ERROR, CRITICAL

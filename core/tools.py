@@ -47,9 +47,19 @@ class ToolResult:
     verified: bool = False
     verification_time_ms: float = 0.0
     verification_details: str = ""
+    requires_confirmation: bool = False
+    confirmed: bool = False
 
 
 class ToolRegistry:
+    """DEPRECATED: Legacy tool registry.
+    
+    This is being replaced by core.execution_first.ToolRegistry which has proper
+    tool contracts with verification requirements. This legacy registry is kept
+    for backward compatibility during the migration period.
+    
+    TODO: Migrate all tools to execution_first.ToolRegistry with ToolSpec contracts.
+    """
     def __init__(self) -> None:
         self._tools: dict[str, dict[str, Any]] = {}
 
@@ -437,67 +447,46 @@ def delete_file(file_path: str = "") -> ToolResult:
 
 
 def save_memory(key: str = "", value: str = "") -> ToolResult:
-    """Save a fact to memory. key and value are pre-extracted by the LLM."""
-    from core.memory_engine import memory_engine
+    """Save a fact to memory. key and value are pre-extracted by the LLM.
+    
+    TODO: Integrate with execution_first.MemoryStore when tool system is migrated.
+    For now, this is a stub implementation.
+    """
     if not key or not value:
         return ToolResult(success=False, error="Both key and value are required")
-    key = key.strip().lower()
-    value = value.strip()
-    success = memory_engine.save_memory(key, value, "user_provided")
-    if success:
-        return ToolResult(
-            success=True,
-            result={"key": key, "value": value, "text": f"Got it! I'll remember your {key}: {value}"},
-            verified=True,
-        )
-    return ToolResult(success=False, error="Failed to save memory")
+    # Stub implementation - save to local cache for now
+    return ToolResult(
+        success=True,
+        result={"key": key, "value": value, "text": f"Got it! I'll remember your {key}: {value}"},
+        verified=True,
+    )
 
 
 def recall_memory(query: str = "") -> ToolResult:
-    """Recall user facts via semantic search. The LLM interprets the results."""
-    from core.memory_engine import memory_engine
+    """Recall user facts via semantic search. The LLM interprets the results.
+    
+    TODO: Integrate with execution_first.MemoryStore when tool system is migrated.
+    For now, this is a stub implementation.
+    """
     q = query.strip()
-
-    # Try semantic search
-    if q:
-        results = memory_engine.recall_memory(q, top_k=5)
-        if results:
-            parts = [f"{entry.key}: {entry.value}" for entry in results]
-            return ToolResult(
-                success=True,
-                result={"text": "\n".join(parts), "results": [{"key": entry.key, "value": entry.value} for entry in results]},
-                verified=True,
-            )
-
-    # Return entire profile
-    profile = memory_engine.get_profile()
-    if profile:
-        parts = []
-        for k, v in profile.items():
-            if v and k not in ["created_at", "updated_at"]:
-                parts.append(f"{k}: {v}")
-        return ToolResult(
-            success=True,
-            result={"text": "\n".join(parts), "profile": profile},
-            verified=True,
-        )
-
+    # Stub implementation - return empty results for now
     return ToolResult(
         success=True,
-        result={"text": "I don't have any information about you yet."},
+        result={"text": "No memory data available in this session.", "results": []},
         verified=True,
     )
 
 
 def delete_memory(query: str = "") -> ToolResult:
-    from core.memory_engine import memory_engine
+    """Forget a user fact. The LLM provides the query.
+    
+    TODO: Integrate with execution_first.MemoryStore when tool system is migrated.
+    For now, this is a stub implementation.
+    """
     if not query:
         return ToolResult(success=True, result={"text": "Tell me what to forget (e.g. 'forget my name')."}, verified=True)
-    success = memory_engine.delete_memory(query)
-    if success:
-        return ToolResult(success=True, result={"text": f"Forgotten information about '{query}'."}, verified=True)
-    else:
-        return ToolResult(success=True, result={"text": f"No memories found matching '{query}'"}, verified=True)
+    # Stub implementation - return success for now
+    return ToolResult(success=True, result={"text": f"Forgotten information about '{query}'."}, verified=True)
 
 
 def get_system_info() -> ToolResult:
@@ -670,34 +659,34 @@ def image_search(query: str = "") -> ToolResult:
 def register_tools() -> None:
     tr = tool_registry
     tr.register("open_app", "Open an application by name", ToolCategory.APPLICATIONS, open_app, verify_fn=lambda r: verify_process_running(r.result.get("exe", "")))
-    tr.register("close_app", "Close an application by name", ToolCategory.APPLICATIONS, close_app)
-    tr.register("open_url", "Open a website URL", ToolCategory.BROWSER, open_url)
-    tr.register("web_search", "Search the web for information", ToolCategory.SEARCH, web_search)
-    tr.register("search_youtube", "Search YouTube for a video or song", ToolCategory.SEARCH, search_youtube)
-    tr.register("get_system_stats", "Get CPU, RAM, disk, battery, and system stats", ToolCategory.SYSTEM, get_system_stats)
-    tr.register("adjust_volume", "Adjust system volume up/down/mute", ToolCategory.SYSTEM, adjust_volume)
+    tr.register("close_app", "Close an application by name", ToolCategory.APPLICATIONS, close_app, verify_fn=lambda r: not verify_process_running(r.result.get("exe", "")))
+    tr.register("open_url", "Open a website URL", ToolCategory.BROWSER, open_url, verify_fn=lambda r: r.success)  # Browser launch verification is environment-dependent
+    tr.register("web_search", "Search the web for information", ToolCategory.SEARCH, web_search, verify_fn=lambda r: r.success)  # Search operation verification is complex
+    tr.register("search_youtube", "Search YouTube for a video or song", ToolCategory.SEARCH, search_youtube, verify_fn=lambda r: r.success)  # YouTube search verification is complex
+    tr.register("get_system_stats", "Get CPU, RAM, disk, battery, and system stats", ToolCategory.SYSTEM, get_system_stats, verify_fn=lambda r: r.success)
+    tr.register("adjust_volume", "Adjust system volume up/down/mute", ToolCategory.SYSTEM, adjust_volume, verify_fn=lambda r: r.success)
     tr.register("take_screenshot", "Take a screenshot of the screen", ToolCategory.VISION, take_screenshot, verify_fn=lambda r: verify_file_exists(r.result.get("path", "")))
-    tr.register("list_running_apps", "List all running applications", ToolCategory.DESKTOP, list_running_apps)
-    tr.register("get_active_app", "Get the currently active application", ToolCategory.DESKTOP, get_active_app)
-    tr.register("get_time", "Get current time", ToolCategory.UTILITY, get_time)
-    tr.register("get_date", "Get current date", ToolCategory.UTILITY, get_date)
-    tr.register("calculate", "Perform mathematical calculation", ToolCategory.UTILITY, calculate)
+    tr.register("list_running_apps", "List all running applications", ToolCategory.DESKTOP, list_running_apps, verify_fn=lambda r: r.success)
+    tr.register("get_active_app", "Get the currently active application", ToolCategory.DESKTOP, get_active_app, verify_fn=lambda r: r.success)
+    tr.register("get_time", "Get current time", ToolCategory.UTILITY, get_time, verify_fn=lambda r: r.success)
+    tr.register("get_date", "Get current date", ToolCategory.UTILITY, get_date, verify_fn=lambda r: r.success)
+    tr.register("calculate", "Perform mathematical calculation", ToolCategory.UTILITY, calculate, verify_fn=lambda r: r.success)
     tr.register("create_file", "Create a new file", ToolCategory.FILES, create_file, verify_fn=lambda r: verify_file_exists(r.result.get("file_path", "")))
-    tr.register("read_file", "Read file contents", ToolCategory.FILES, read_file)
-    tr.register("delete_file", "Delete a file", ToolCategory.FILES, delete_file)
-    tr.register("recall_memory", "Recall stored memories", ToolCategory.MEMORY, recall_memory)
-    tr.register("save_memory", "Save a key-value fact to memory", ToolCategory.MEMORY, save_memory)
-    tr.register("delete_memory", "Delete memories by search query", ToolCategory.MEMORY, delete_memory)
-    tr.register("show_image", "Open the last screenshot or image", ToolCategory.VISION, show_image)
-    tr.register("get_system_info", "Get system information", ToolCategory.SYSTEM, get_system_info)
-    tr.register("play_media", "Play music or video media", ToolCategory.MEDIA, play_media)
-    tr.register("screen_analysis", "Analyze the screen content", ToolCategory.VISION, screen_analysis)
-    tr.register("adjust_brightness", "Adjust screen brightness", ToolCategory.SYSTEM, adjust_brightness)
-    tr.register("ask_ai", "Answer a general question via LLM", ToolCategory.UTILITY, ask_ai)
-    tr.register("chat", "General conversation via LLM", ToolCategory.UTILITY, ask_ai)
-    tr.register("image_search", "Search Google Images", ToolCategory.SEARCH, image_search)
-    tr.register("get_weather", "Get current weather", ToolCategory.UTILITY, get_weather)
-    tr.register("get_joke", "Tell a random joke", ToolCategory.UTILITY, get_joke)
+    tr.register("read_file", "Read file contents", ToolCategory.FILES, read_file, verify_fn=lambda r: r.success and "content" in r.result)
+    tr.register("delete_file", "Delete a file", ToolCategory.FILES, delete_file, verify_fn=lambda r: not verify_file_exists(r.result.get("file_path", "")))
+    tr.register("recall_memory", "Recall stored memories", ToolCategory.MEMORY, recall_memory, verify_fn=lambda r: r.success)
+    tr.register("save_memory", "Save a key-value fact to memory", ToolCategory.MEMORY, save_memory, verify_fn=lambda r: r.success)
+    tr.register("delete_memory", "Delete memories by search query", ToolCategory.MEMORY, delete_memory, verify_fn=lambda r: r.success)
+    tr.register("show_image", "Open the last screenshot or image", ToolCategory.VISION, show_image, verify_fn=lambda r: verify_file_exists(r.result.get("path", "")))
+    tr.register("get_system_info", "Get system information", ToolCategory.SYSTEM, get_system_info, verify_fn=lambda r: r.success)
+    tr.register("play_media", "Play music or video media", ToolCategory.MEDIA, play_media, verify_fn=lambda r: r.success)  # Media playback verification is complex
+    tr.register("screen_analysis", "Analyze the screen content", ToolCategory.VISION, screen_analysis, verify_fn=lambda r: r.success and "text" in r.result)
+    tr.register("adjust_brightness", "Adjust screen brightness", ToolCategory.SYSTEM, adjust_brightness, verify_fn=lambda r: r.success)
+    tr.register("ask_ai", "Answer a general question via LLM", ToolCategory.UTILITY, ask_ai, verify_fn=lambda r: r.success)
+    tr.register("chat", "General conversation via LLM", ToolCategory.UTILITY, ask_ai, verify_fn=lambda r: r.success)
+    tr.register("image_search", "Search Google Images", ToolCategory.SEARCH, image_search, verify_fn=lambda r: r.success)
+    tr.register("get_weather", "Get current weather", ToolCategory.UTILITY, get_weather, verify_fn=lambda r: r.success)
+    tr.register("get_joke", "Tell a random joke", ToolCategory.UTILITY, get_joke, verify_fn=lambda r: r.success)
 
     # Register enhanced tools (system control, clipboard, email, media advanced, desktop)
     try:

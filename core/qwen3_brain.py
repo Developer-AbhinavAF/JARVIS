@@ -24,7 +24,6 @@ from typing import Any, Dict, List, Optional, AsyncGenerator
 from dataclasses import dataclass
 
 from core.router import AIRouter, RouterResponse
-from core.memory_engine import memory_engine
 from core.context_engine import context_engine
 
 try:
@@ -56,216 +55,177 @@ class QWEN3Brain:
     
     def __init__(self):
         self._router = AIRouter()
-        self._thinking_mode = True
+        self._thinking_mode = True  # Enabled - let the model reason freely
         self._stream_mode = True
         self._personality = self._load_personality()
         self._system_prompt = self._build_system_prompt()
+        self._temperature = 0.7  # Allow natural, unrestricted reasoning
         
     def _load_personality(self) -> Dict[str, str]:
-        """Load personality from memory."""
-        personality = memory_engine._load_json(memory_engine._personality_file)
+        """Load personality from memory or use defaults."""
+        # TODO: Load from execution_first.MemoryStore when integrated
+        # For now, use default personality
         return {
-            "style": personality.get("response_preference", "concise"),
-            "formality": personality.get("formality_preference", "professional"),
-            "humor": personality.get("humor_tolerance", "light"),
-            "communication": personality.get("communication_style", "natural")
+            "style": "concise",
+            "formality": "professional",
+            "humor": "light",
+            "communication": "natural"
         }
     
+    DOC_FILES = (
+        "master_system_prompt.md",
+        "thinking_pipeline.md",
+        "planner.md",
+        "memory.md",
+        "safety_layer.md",
+    )
+
+    FOOD_FILES = (
+        "00_identity.md", "01_reasoning.md", "02_tools.md",
+        "10_personality.md", "11_safety.md", "19_response_style.md",
+    )
+
+    def _load_docs(self) -> str:
+        """Load compact operating rules at startup (fits provider budgets)."""
+        root = os.path.dirname(os.path.dirname(__file__))
+        parts = []
+        for name in self.DOC_FILES:
+            path = None
+            for candidate in (os.path.join(root, name), os.path.join(root, "docs", name)):
+                if os.path.exists(candidate):
+                    path = candidate
+                    break
+            if not path:
+                continue
+            try:
+                with open(path, encoding="utf-8") as f:
+                    content = f.read().strip()
+                if content:
+                    parts.append(f"=== {name} ===\n{content[:1500]}")
+            except OSError:
+                continue
+        foods_dir = os.path.join(root, "foods")
+        for fname in self.FOOD_FILES:
+            path = os.path.join(foods_dir, fname)
+            try:
+                with open(path, encoding="utf-8") as f:
+                    content = f.read().strip()
+                if content:
+                    parts.append(f"=== foods/{fname} ===\n{content[:1200]}")
+            except OSError:
+                continue
+        return "\n\n".join(parts)
+
+    def _load_tools(self) -> str:
+        """Load every registered tool contract for the LLM (compact)."""
+        try:
+            from core.tools import tool_registry
+            tools = tool_registry.get_all()
+            lines = []
+            for name, t in tools.items():
+                params = ", ".join(t.get("params", {}).keys())
+                desc = t.get("description", "")
+                if params:
+                    lines.append(f"- {name}({params}): {desc[:90]}")
+                else:
+                    lines.append(f"- {name}(): {desc[:90]}")
+            return "\n".join(lines) if lines else "No tools registered."
+        except Exception:
+            return "No tools registered."
+
     def _build_system_prompt(self) -> str:
-        """Build comprehensive system prompt from FOOD system."""
-        # Load FOOD configuration
-        food_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "food")
+        """Build system prompt: master rules + full docs + all tool contracts."""
+        root = os.path.dirname(os.path.dirname(__file__))
+        master_prompt = ""
+        for candidate in (
+            os.path.join(root, "master_system_prompt.md"),
+            os.path.join(root, "docs", "master_system_prompt.md"),
+        ):
+            try:
+                with open(candidate, encoding="utf-8") as f:
+                    master_prompt = f.read().strip()
+                if master_prompt:
+                    logger.info("Loaded master system prompt from %s", candidate)
+                    break
+            except OSError:
+                continue
+
+        if master_prompt:
+            docs = self._load_docs()
+            tools = self._load_tools()
+            return (
+                master_prompt
+                + "\n\n=== OPERATING DOCUMENTATION AND RULES ===\n" + docs
+                + "\n\n=== AVAILABLE TOOLS ===\n" + tools
+                + "\n\n=== TOOL CALL FORMAT ===\n"
+                + "To call a tool, think about which tool fits, then end your reply with a JSON block:\n"
+                + '{"tool":"tool_name","params":{"arg":"value"}}\n'
+                + "Only include the JSON block when a tool call is needed. Never invent tools."
+            )
         
         prompt_parts = [
-            "# JARVIS AI System",
+            "You are JARVIS, an execution-first AI operating system created by Abhinav.",
             "",
-            "You are JARVIS, an intelligent AI assistant created by Abhinav.",
+            "Execution > Planning > Conversation.",
+            "If a tool exists, use it. Never simulate or pretend an action happened.",
             "",
-            "## Core Personality",
-            "- Intelligent: Capable and knowledgeable",
-            "- Calm: Composed under pressure",
-            "- Human: Natural and relatable",
-            "- Helpful: Proactive and solution-oriented",
-            "- Slightly Witty: Appropriate humor",
-            "- Professional: Respectful and reliable",
+            "Think silently. Never include reasoning, meta-commentary, or think tags in your reply.",
+            "For simple requests (greetings, quick facts), answer immediately without lengthy reasoning.",
             "",
-            "## Communication Style",
-            f"- Formality: {self._personality['formality']}",
-            f"- Humor: {self._personality['humor']}",
-            f"- Response style: {self._personality['style']}",
-            f"- Communication: {self._personality['communication']}",
-            "",
-            "## Multi-Language Support",
-            "- English: Full support",
-            "- Hindi: Full support (हिंदी)",
-            "- Hinglish: Full support (Roman Hindi + English mix)",
-            "- Roman Hindi: Full support",
-            "- Detect language automatically and respond appropriately",
-            "- Examples:",
-            "  - 'open youtube' → English",
-            "  - 'youtube kholo' → Hindi",
-            "  - 'youtube khol do' → Hinglish",
-            "  - 'jara youtube open karo' → Mixed",
-            "  - 'can you launch youtube please' → English formal",
-            "",
-            "## Tool Usage",
-            "You have access to these tools:",
-            "- open_app: Launch applications",
-            "- close_app: Close applications",
-            "- open_url: Open websites",
-            "- web_search: Search Google",
-            "- search_youtube: Search YouTube",
-            "- play_media: Play songs/videos",
-            "- take_screenshot: Capture screen",
-            "- screen_analysis: Analyze screen with OCR",
-            "- get_system_stats: System information",
-            "- system_sleep/shutdown/lock: System control",
-            "- adjust_volume/brightness: System controls",
-            "- save_memory/recall_memory: Memory operations",
-            "- create_file/read_file/delete_file: File operations",
-            "- calculate: Math calculations",
-            "- get_time/get_date: Time and date",
-            "- get_weather: Weather information",
-            "- type_text/press_key: Desktop control",
-            "- copy_to_clipboard/paste_from_clipboard: Clipboard",
-            "",
-            "## Response Format",
-            "When you need to use a tool, respond with JSON:",
-            '```json',
-            '{"tool": "tool_name", "params": {"param": "value"}, "response": "natural language response"}',
-            '```',
-            "",
-            "For general conversation, respond naturally without JSON.",
-            "",
-            "## Context Understanding",
-            "- Maintain conversation context",
-            "- Resolve pronouns (there, that, it, this)",
-            "- Reference previous statements",
-            "- Track entities mentioned",
-            "",
-            "## User Profile",
+            "Open apps and websites, search, play media, run system tasks.",
+            "Only use conversation as the fallback when no tool matches.",
+            "To call a tool, end your reply with a JSON block: {\"tool\":\"name\",\"params\":{...}}"
         ]
-        
-        # Add user profile if available
-        profile_summary = memory_engine.get_profile_summary()
-        if profile_summary and "No profile information" not in profile_summary:
-            prompt_parts.append(profile_summary)
-        
-        prompt_parts.extend([
-            "",
-            "## Important Rules",
-            "- NO hardcoded responses",
-            "- NO keyword matching",
-            "- NO fake success messages",
-            "- Always verify tool execution",
-            "- Be helpful and honest",
-            "- Admit when you don't know something",
-            "- Learn from mistakes",
-            "- Protect user privacy",
-            "",
-            "## Thinking Process",
-            "When processing complex requests, think step-by-step:",
-            "1. Understand user intent",
-            "2. Analyze context",
-            "3. Select appropriate tool(s)",
-            "4. Plan execution",
-            "5. Consider verification",
-            "6. Formulate response",
-            "",
-            "Remember: You are JARVIS, a human-level AI assistant. Be helpful, be accurate, be real.",
-        ])
-        
         return "\n".join(prompt_parts)
     
     def _update_context(self, user_input: str) -> None:
-        """Update context engine with user input."""
-        from core.context_engine import ContextEntity
-        entities: list[ContextEntity] = []
-        text = user_input.lower()
+        """Update context engine with user input.
         
-        apps = ["chrome", "firefox", "vscode", "spotify", "youtube", "github", "gmail"]
-        for app in apps:
-            if app in text:
-                entities.append(ContextEntity(name=app, type="app"))
-        
-        websites = ["youtube", "github", "google", "gmail", "chatgpt", "reddit", "twitter"]
-        for site in websites:
-            if site in text:
-                entities.append(ContextEntity(name=site, type="website"))
-        
-        context_engine.add_context(
-            user_input=user_input,
-            entities=entities
-        )
+        TODO: Integrate with execution_first.MemoryStore when tool system is migrated.
+        For now, use legacy context_engine.
+        """
+        try:
+            context_engine.add_to_history(user_input, role="user")
+        except Exception as e:
+            logger.debug(f"Context update failed: {e}")
+    
+    def _history_messages(self) -> List[Dict[str, str]]:
+        """Ongoing conversation from convo/ (persisted JSON) so fallback switches keep context."""
+        try:
+            from core.conversation_store import conversation_store
+            history = conversation_store.messages(limit=20)
+        except Exception as e:
+            logger.debug(f"Conversation store unavailable: {e}")
+            history = []
+        if not history:
+            try:
+                history = context_engine.get_recent_history(limit=5)
+            except Exception:
+                history = []
+        return history
     
     async def think(self, user_input: str, context: Dict[str, Any] = None) -> AsyncGenerator[str, None]:
-        """Generate thinking tokens in real-time."""
+        """Generate ultra-brief thinking tokens (rule-based, not LLM)."""
         context = context or {}
         
-        # Build messages
-        messages = [
-            {"role": "system", "content": self._system_prompt},
-        ]
+        # Simple rule-based thinking (2-3 words max)
+        input_lower = user_input.lower().strip()
         
-        # Add conversation history
-        history = context_engine.get_recent_history(limit=5)
-        for entry in history:
-            if entry["role"] in ["user", "assistant"]:
-                messages.append({
-                    "role": entry["role"],
-                    "content": entry.get("content", "")
-                })
-        
-        # Add current user input
-        messages.append({"role": "user", "content": user_input})
-        
-        # Add context if available
-        if context:
-            context_str = f"\n\nCurrent Context:\n{json.dumps(context, indent=2)}"
-            messages[-1]["content"] += context_str
-        
-        # Update context engine
-        self._update_context(user_input)
-        
-        # Generate thinking process
-        thinking_prompt = f"""Think step-by-step about this user request: "{user_input}"
-
-Consider:
-1. What does the user want?
-2. What tools might be needed?
-3. What is the current context?
-4. How should I respond?
-
-Provide your thinking process step by step."""
-        
-        try:
-            # Try Ollama first (QWEN3)
-            if self._router._ollama:
-                try:
-                    async for token in self._router._ollama.chat_stream(
-                        [{"role": "user", "content": thinking_prompt}],
-                        model=self._router._ollama.model
-                    ):
-                        if token.strip():
-                            yield token
-                except Exception as e:
-                    logger.debug(f"Ollama thinking failed: {e}")
-                    yield "Thinking..."
-            
-            # Fallback to other providers
-            for provider in sorted(self._router._providers, key=lambda p: p.info.priority):
-                try:
-                    async for token in provider.chat_stream([{"role": "user", "content": thinking_prompt}]):
-                        if token.strip():
-                            yield token
-                    break
-                except Exception as e:
-                    logger.debug(f"Provider {provider.info.name} thinking failed: {e}")
-                    continue
-            
-        except Exception as e:
-            logger.error(f"Thinking generation failed: {e}")
-            yield "Thinking..."
+        # Greetings
+        if any(word in input_lower for word in ["hello", "hi", "hey", "hii", "helloo"]):
+            yield "\x00User wants greeting"
+        # How are you
+        elif "how are you" in input_lower or "how r u" in input_lower:
+            yield "\x00User asking about me"
+        # Questions
+        elif "?" in input_lower:
+            yield "\x00User has question"
+        # Commands
+        elif any(word in input_lower for word in ["open", "close", "play", "search", "launch"]):
+            yield "\x00User wants action"
+        # Default
+        else:
+            yield "\x00Processing request"
     
     async def generate(self, user_input: str, context: Dict[str, Any] = None) -> AsyncGenerator[str, None]:
         """Generate response token by token."""
@@ -277,13 +237,12 @@ Provide your thinking process step by step."""
         ]
         
         # Add conversation history
-        history = context_engine.get_recent_history(limit=5)
+        history = self._history_messages()
         for entry in history:
-            if entry["role"] in ["user", "assistant"]:
-                messages.append({
-                    "role": entry["role"],
-                    "content": entry.get("content", "")
-                })
+            messages.append({
+                "role": entry["role"],
+                "content": entry.get("content", "")
+            })
         
         # Add current user input
         messages.append({"role": "user", "content": user_input})
@@ -297,26 +256,33 @@ Provide your thinking process step by step."""
         self._update_context(user_input)
         
         try:
-            # Try Ollama first (QWEN3 - Primary)
+            # Try Ollama first (QWEN2.5:14B - Primary via tunnel)
             if self._router._ollama:
                 try:
+                    emitted = False
                     async for token in self._router._ollama.chat_stream(
                         messages,
-                        model=self._router._ollama.model
+                        model=self._router._ollama.model,
+                        temperature=self._temperature
                     ):
                         if token.strip():
+                            emitted = True
                             yield token
-                    return
+                    if emitted:
+                        return
                 except Exception as e:
                     logger.debug(f"Ollama generation failed: {e}")
             
-            # Fallback to Groq (Secondary)
+            # Fallback to other providers
             for provider in sorted(self._router._providers, key=lambda p: p.info.priority):
                 try:
-                    async for token in provider.chat_stream(messages):
+                    emitted = False
+                    async for token in provider.chat_stream(messages, temperature=self._temperature):
                         if token.strip():
+                            emitted = True
                             yield token
-                    return
+                    if emitted:
+                        return
                 except Exception as e:
                     logger.debug(f"Provider {provider.info.name} failed: {e}")
                     continue
@@ -331,6 +297,7 @@ Provide your thinking process step by step."""
     async def generate_complete(self, user_input: str, context: Dict[str, Any] = None) -> BrainResponse:
         """Generate complete response (non-streaming)."""
         context = context or {}
+        start_time = time.time()
         
         # Build messages
         messages = [
@@ -338,13 +305,12 @@ Provide your thinking process step by step."""
         ]
         
         # Add conversation history
-        history = context_engine.get_recent_history(limit=5)
+        history = self._history_messages()
         for entry in history:
-            if entry["role"] in ["user", "assistant"]:
-                messages.append({
-                    "role": entry["role"],
-                    "content": entry.get("content", "")
-                })
+            messages.append({
+                "role": entry["role"],
+                "content": entry.get("content", "")
+            })
         
         # Add current user input
         messages.append({"role": "user", "content": user_input})
@@ -357,38 +323,39 @@ Provide your thinking process step by step."""
         # Update context engine
         self._update_context(user_input)
         
-        start_time = time.time()
-        
         try:
             # Try Ollama first (QWEN3 - Primary)
             if self._router._ollama:
                 try:
-                    response = await self._router._ollama.chat(
+                    resp = await self._router._ollama.chat(
                         messages,
-                        model=self._router._ollama.model
+                        model=self._router._ollama.model,
+                        temperature=self._temperature
                     )
-                    if response.success:
+                    if resp.success:
+                        context_engine.add_to_history(resp.content, role="assistant")
                         return BrainResponse(
-                            content=response.content,
+                            content=resp.content,
                             success=True,
                             provider="ollama",
-                            model=response.model,
-                            latency_ms=response.latency_ms
+                            model=self._router._ollama.model,
+                            latency_ms=resp.latency_ms
                         )
                 except Exception as e:
                     logger.debug(f"Ollama generation failed: {e}")
             
-            # Fallback to Groq (Secondary)
+            # Fallback to other providers
             for provider in sorted(self._router._providers, key=lambda p: p.info.priority):
                 try:
-                    response = await provider.chat(messages)
-                    if response.success:
+                    resp = await provider.chat(messages, temperature=self._temperature)
+                    if resp.success:
+                        context_engine.add_to_history(resp.content, role="assistant")
                         return BrainResponse(
-                            content=response.content,
+                            content=resp.content,
                             success=True,
                             provider=provider.info.name,
-                            model=response.model,
-                            latency_ms=response.latency_ms
+                            model=provider.info.models[0] if provider.info.models else "unknown",
+                            latency_ms=resp.latency_ms
                         )
                 except Exception as e:
                     logger.debug(f"Provider {provider.info.name} failed: {e}")
@@ -428,6 +395,11 @@ Provide your thinking process step by step."""
         """Disable streaming mode."""
         self._stream_mode = False
         logger.info("Stream mode disabled")
+    
+    def set_temperature(self, temperature: float) -> None:
+        """Set temperature for generation (0.0 - 1.0)."""
+        self._temperature = max(0.0, min(1.0, temperature))
+        logger.info(f"Temperature set to {self._temperature}")
     
     def reload_system_prompt(self) -> None:
         """Reload system prompt (useful after personality changes)."""

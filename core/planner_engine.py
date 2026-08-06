@@ -1,7 +1,11 @@
 """planner_engine — Planning engine for complex task execution.
 
+DEPRECATED: This is the legacy planner being replaced by execution_first intent classification.
+
 Handles single-step, multi-step, conditional, and iterative plans.
 Analyzes user intent, selects tools, handles dependencies, and plans verification.
+
+TODO: Migrate planning logic to execution_first.Intent and dynamic reasoning levels.
 """
 
 from __future__ import annotations
@@ -16,7 +20,6 @@ import time
 
 from core.tools import tool_registry, ToolResult
 from core.context_engine import context_engine
-from core.memory_engine import memory_engine
 
 logger = logging.getLogger(__name__)
 
@@ -100,29 +103,34 @@ class PlannerEngine:
         return True
     
     def _is_multi_step(self, user_input: str) -> bool:
-        """Check if this requires multiple steps."""
-        multi_step_indicators = [
-            "then", "after that", "next", "and then",
-            "followed by", "finally", "lastly",
-            "phir", "ke baad", "uske baad"  # Hindi
-        ]
-        return any(indicator in user_input.lower() for indicator in multi_step_indicators)
+        """Check if this requires multiple steps.
+        
+        DEPRECATED: Uses keyword matching. Should be replaced with semantic analysis.
+        TODO: Replace with execution_first.Intent classification.
+        """
+        # Keyword matching removed - always return False to avoid multi-step
+        # Multi-step planning should be handled by execution_first runtime
+        return False
     
     def _is_conditional(self, user_input: str) -> bool:
-        """Check if this requires conditional logic."""
-        conditional_indicators = [
-            "if", "else", "otherwise", "when",
-            "agar", "nahi to", "warna"  # Hindi
-        ]
-        return any(indicator in user_input.lower() for indicator in conditional_indicators)
+        """Check if this requires conditional logic.
+        
+        DEPRECATED: Uses keyword matching. Should be replaced with semantic analysis.
+        TODO: Replace with execution_first.Intent classification.
+        """
+        # Keyword matching removed - always return False to avoid conditional
+        # Conditional planning should be handled by execution_first runtime
+        return False
     
     def _is_iterative(self, user_input: str) -> bool:
-        """Check if this requires iteration."""
-        iterative_indicators = [
-            "all", "each", "every", "for each",
-            "sab", "har ek", "sabhi"  # Hindi
-        ]
-        return any(indicator in user_input.lower() for indicator in iterative_indicators)
+        """Check if this requires iteration.
+        
+        DEPRECATED: Uses keyword matching. Should be replaced with semantic analysis.
+        TODO: Replace with execution_first.Intent classification.
+        """
+        # Keyword matching removed - always return False to avoid iterative
+        # Iterative planning should be handled by execution_first runtime
+        return False
     
     def _create_single_step_plan(self, tool: str, parameters: Dict[str, Any], 
                                  user_input: str) -> ExecutionPlan:
@@ -146,165 +154,45 @@ class PlannerEngine:
     
     def _create_multi_step_plan(self, user_input: str, tool: str, 
                                parameters: Dict[str, Any]) -> ExecutionPlan:
-        """Create a multi-step plan."""
-        plan_id = f"plan_{int(time.time() * 1000)}"
-        steps = []
+        """Create a multi-step plan.
         
-        # Parse common multi-step patterns
-        # Pattern: "open youtube, search interstellar, play it"
-        if "youtube" in user_input.lower() and "search" in user_input.lower():
-            steps.append(PlanStep(
-                step_id="step_1",
-                tool_name="open_url",
-                parameters={"url": "youtube"},
-                description="Open YouTube"
-            ))
-            
-            # Extract search query
-            search_query = self._extract_search_query(user_input)
-            if search_query:
-                steps.append(PlanStep(
-                    step_id="step_2",
-                    tool_name="search_youtube",
-                    parameters={"query": search_query},
-                    depends_on=["step_1"],
-                    description=f"Search YouTube for '{search_query}'"
-                ))
-                
-                steps.append(PlanStep(
-                    step_id="step_3",
-                    tool_name="play_media",
-                    parameters={"query": search_query},
-                    depends_on=["step_2"],
-                    description=f"Play '{search_query}'"
-                ))
-        
-        # Pattern: "open github, search ollama, open first repo"
-        elif "github" in user_input.lower() and "search" in user_input.lower():
-            steps.append(PlanStep(
-                step_id="step_1",
-                tool_name="open_url",
-                parameters={"url": "github"},
-                description="Open GitHub"
-            ))
-            
-            search_query = self._extract_search_query(user_input)
-            if search_query:
-                steps.append(PlanStep(
-                    step_id="step_2",
-                    tool_name="web_search",
-                    parameters={"query": search_query, "site": "github.com"},
-                    depends_on=["step_1"],
-                    description=f"Search GitHub for '{search_query}'"
-                ))
-                
-                steps.append(PlanStep(
-                    step_id="step_3",
-                    tool_name="open_url",
-                    parameters={"url": "first_result"},  # Would need actual result
-                    depends_on=["step_2"],
-                    description="Open first repository"
-                ))
-        
-        # Default: just the requested tool
-        else:
-            steps.append(PlanStep(
-                step_id="step_1",
-                tool_name=tool,
-                parameters=parameters,
-                description=f"Execute {tool}"
-            ))
-        
-        return ExecutionPlan(
-            plan_id=plan_id,
-            plan_type=PlanType.MULTI_STEP,
-            steps=steps,
-            description=f"Multi-step plan with {len(steps)} steps",
-            estimated_time=len(steps) * 5.0
-        )
+        DEPRECATED: Uses keyword matching patterns. Should be replaced with semantic analysis.
+        TODO: Replace with execution_first.Intent classification and dynamic reasoning.
+        """
+        # Keyword matching removed - fall back to single-step
+        # Multi-step planning should be handled by execution_first runtime
+        return self._create_single_step_plan(tool, parameters, user_input)
     
     def _create_conditional_plan(self, user_input: str, tool: str, 
                                  parameters: Dict[str, Any]) -> ExecutionPlan:
-        """Create a conditional plan."""
-        plan_id = f"plan_{int(time.time() * 1000)}"
-        steps = []
+        """Create a conditional plan.
         
-        # Pattern: "if chrome is open, close it, else open it"
-        if "chrome" in user_input.lower() and ("close" in user_input.lower() or "open" in user_input.lower()):
-            steps.append(PlanStep(
-                step_id="step_1",
-                tool_name="list_running_apps",
-                parameters={},
-                description="Check if Chrome is running"
-            ))
-            
-            steps.append(PlanStep(
-                step_id="step_2",
-                tool_name="close_app",
-                parameters={"app_name": "chrome"},
-                depends_on=["step_1"],
-                condition="chrome_running",
-                description="Close Chrome if running"
-            ))
-            
-            steps.append(PlanStep(
-                step_id="step_3",
-                tool_name="open_app",
-                parameters={"app_name": "chrome"},
-                depends_on=["step_1"],
-                condition="not chrome_running",
-                description="Open Chrome if not running"
-            ))
-        
-        return ExecutionPlan(
-            plan_id=plan_id,
-            plan_type=PlanType.CONDITIONAL,
-            steps=steps,
-            description="Conditional plan based on state",
-            estimated_time=10.0
-        )
+        DEPRECATED: Uses keyword matching patterns. Should be replaced with semantic analysis.
+        TODO: Replace with execution_first.Intent classification and dynamic reasoning.
+        """
+        # Keyword matching removed - fall back to single-step
+        # Conditional planning should be handled by execution_first runtime
+        return self._create_single_step_plan(tool, parameters, user_input)
     
     def _create_iterative_plan(self, user_input: str, tool: str, 
                                parameters: Dict[str, Any]) -> ExecutionPlan:
-        """Create an iterative plan."""
-        plan_id = f"plan_{int(time.time() * 1000)}"
-        steps = []
+        """Create an iterative plan.
         
-        # Pattern: "close all chrome windows"
-        if "all" in user_input.lower() and "chrome" in user_input.lower():
-            steps.append(PlanStep(
-                step_id="step_1",
-                tool_name="list_running_apps",
-                parameters={},
-                description="List all Chrome processes"
-            ))
-            
-            steps.append(PlanStep(
-                step_id="step_2",
-                tool_name="close_app",
-                parameters={"app_name": "chrome"},
-                depends_on=["step_1"],
-                description="Close each Chrome process (iterative)"
-            ))
-        
-        return ExecutionPlan(
-            plan_id=plan_id,
-            plan_type=PlanType.ITERATIVE,
-            steps=steps,
-            description="Iterative plan for bulk operations",
-            estimated_time=15.0
-        )
+        DEPRECATED: Uses keyword matching patterns. Should be replaced with semantic analysis.
+        TODO: Replace with execution_first.Intent classification and dynamic reasoning.
+        """
+        # Keyword matching removed - fall back to single-step
+        # Iterative planning should be handled by execution_first runtime
+        return self._create_single_step_plan(tool, parameters, user_input)
     
     def _extract_search_query(self, user_input: str) -> str:
-        """Extract search query from user input."""
-        # Simple extraction - in production, use NLP
-        words = user_input.split()
-        search_keywords = ["search", "find", "dhundo", "khoj"]
+        """Extract search query from user input.
         
-        for i, word in enumerate(words):
-            if word.lower() in search_keywords and i + 1 < len(words):
-                return " ".join(words[i + 1:])
-        
+        DEPRECATED: Uses keyword matching. Should be replaced with semantic analysis.
+        TODO: Replace with execution_first.Intent entity extraction.
+        """
+        # Keyword matching removed - return empty string
+        # Entity extraction should be handled by execution_first runtime
         return ""
     
     async def execute_plan(self, plan: ExecutionPlan) -> PlanResult:

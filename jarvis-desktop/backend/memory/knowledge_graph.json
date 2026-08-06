@@ -1,0 +1,12 @@
+[
+  {
+    "subject": "User",
+    "relation": "creator",
+    "object": "Abhinav"
+  },
+  {
+    "subject": "JARVIS",
+    "relation": "role",
+    "object": "AI OS"
+  }
+]

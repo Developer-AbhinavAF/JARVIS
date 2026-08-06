@@ -77,22 +77,88 @@ _frontend_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(lev
 logging.getLogger().addHandler(_frontend_handler)
 
 # ═══════════════════════════════════════════════════════════════
+# DESKTOP UI FOOD — context injected into every chat message
+# ═══════════════════════════════════════════════════════════════
+
+def get_desktop_food() -> str:
+    """Return a short string of desktop-UI context prepended to user messages.
+
+    Currently returns a minimal header so the chat handler can always inject
+    context. Extend this to surface real UI state (active panel, recent logs,
+    system stats summary) when those subsystems expose it.
+    """
+    try:
+        stats = get_system_stats()
+        cpu = stats.get("cpu", {}).get("usage", 0)
+        mem_pct = stats.get("memory", {}).get("percentage", 0)
+        return (
+            "[Desktop UI Context]\n"
+            f"channel: jarvis-desktop\n"
+            f"cpu_percent: {cpu}\n"
+            f"memory_percent: {mem_pct}\n"
+        )
+    except Exception as exc:  # never let food gathering break chat
+        logger.debug("get_desktop_food fallback: %s", exc)
+        return "[Desktop UI Context]\nchannel: jarvis-desktop\n"
+
+
+# ═══════════════════════════════════════════════════════════════
 # JARVIS INSTANCE — the real brain
 # ═══════════════════════════════════════════════════════════════
 
 jarvis_instance = None
+_boot_lock: Optional[asyncio.Lock] = None
+
+
+def _get_boot_lock() -> asyncio.Lock:
+    """Lazily create the boot lock (must be created inside a running loop)."""
+    global _boot_lock
+    if _boot_lock is None:
+        _boot_lock = asyncio.Lock()
+    return _boot_lock
+
+
+# Configurable timeouts — Ollama's first response after boot can take a
+# long time while the model is loaded / warmed up. These can be overridden
+# via environment variables without code changes.
+HANDLE_TIMEOUT_SECONDS = float(os.getenv("JARVIS_HANDLE_TIMEOUT", "180"))
+STREAM_TIMEOUT_SECONDS = float(os.getenv("JARVIS_STREAM_TIMEOUT", "300"))
+OLLAMA_WARMUP_TIMEOUT = float(os.getenv("OLLAMA_WARMUP_TIMEOUT", "60"))
 
 
 async def get_jarvis():
+    """Return the shared JARVIS instance, booting it once under a lock.
+
+    Using a lock prevents a thundering-herd of concurrent /api/chat
+    requests from each spawning their own boot (which loads heavy models
+    and can OOM the box).
+    """
     global jarvis_instance
-    if jarvis_instance is None:
+    if jarvis_instance is not None:
+        return jarvis_instance
+
+    async with _get_boot_lock():
+        if jarvis_instance is not None:
+            return jarvis_instance
+        logger.info("Booting JARVIS instance (first request)...")
+        boot_start = time.time()
         import importlib.util
         root_app_path = str(JARVIS_ROOT / "app.py")
         spec = importlib.util.spec_from_file_location("jarvis_root_app", root_app_path)
         root_app = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(root_app)
         jarvis_instance = root_app.JARVIS()
-        await jarvis_instance.boot()
+        try:
+            await asyncio.wait_for(jarvis_instance.boot(), timeout=OLLAMA_WARMUP_TIMEOUT)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "JARVIS boot exceeded %.0fs — continuing in background. "
+                "The first chat may still take a moment.",
+                OLLAMA_WARMUP_TIMEOUT,
+            )
+        except Exception as exc:
+            logger.error("JARVIS boot failed: %s", exc, exc_info=True)
+        logger.info("JARVIS instance ready in %.2fs", time.time() - boot_start)
     return jarvis_instance
 
 
@@ -277,10 +343,10 @@ class ChatRequest(BaseModel):
 async def chat(request: Request):
     """Process chat message. Supports JSON and multipart/form-data (file upload).
     Returns SSE stream if stream=true, otherwise JSON response."""
+    session_id = "default"
+    message = ""
     try:
         content_type = request.headers.get("content-type", "")
-        message = ""
-        session_id = "default"
         stream_mode = False
         file_name = None
         file_type = None
@@ -290,6 +356,7 @@ async def chat(request: Request):
             form = await request.form()
             message = form.get("message", "")
             session_id = form.get("session_id", "default")
+            stream_mode = str(form.get("stream", "false")).lower() in ("1", "true", "yes")
             file_name = form.get("file_name")
             file_type = form.get("file_type")
             file_data = form.get("file_data")
@@ -297,9 +364,17 @@ async def chat(request: Request):
             json_data = await request.json()
             message = json_data.get("message", "")
             session_id = json_data.get("session_id", "default")
-            stream_mode = json_data.get("stream", False)
+            stream_mode = bool(json_data.get("stream", False))
 
         logger.info("Chat: %s (stream=%s)", message[:80], stream_mode)
+
+        # Inject desktop UI food into message
+        try:
+            desktop_food = get_desktop_food()
+        except Exception as food_err:
+            logger.debug("desktop_food gather failed: %s", food_err)
+            desktop_food = ""
+        augmented_message = f"{desktop_food}\n\nUser Message: {message}" if desktop_food else message
 
         # File upload
         if file_data and file_name:
@@ -311,22 +386,98 @@ async def chat(request: Request):
                 "suggestions": None,
             }
 
-        # Streaming SSE
+        # Streaming SSE — actually stream tokens from process_stream so the
+        # client sees the first token the moment Ollama produces it instead
+        # of waiting for the full response.
         if stream_mode:
             async def event_stream():
-                jarvis = await get_jarvis()
-                result = await jarvis.handle(message)
-                text = result.get("response", "")
-                actions = build_actions(result)
+                full_text = ""
+                intent = ""
+                intent_confidence = 0.0
+                tool = ""
+                verified = False
+                meta: dict[str, Any] = {}
+                try:
+                    jarvis = await get_jarvis()
+                    stream_start = time.time()
 
-                # Stream token by token (simulated — real streaming would use LLM stream)
-                for i in range(0, len(text), 3):
-                    chunk = text[i:i + 3]
-                    yield f"data: {json.dumps({'token': chunk})}\n\n"
-                    await asyncio.sleep(0.01)
+                    async def _drain():
+                        """Pull tokens from the core / fallback and yield
+                        (kind, payload) tuples. Lives inside a coroutine so we
+                        can apply a deadline to the whole drain."""
+                        nonlocal full_text, intent, intent_confidence, tool, verified, meta
+                        if jarvis._core is not None and hasattr(jarvis._core, "process_stream"):
+                            async for event in jarvis._core.process_stream(augmented_message):
+                                etype = getattr(event, "event_type", "") or getattr(event, "type", "")
+                                if etype == "response_token":
+                                    token = getattr(event, "token", "")
+                                    if token:
+                                        full_text += token
+                                        yield ("token", token)
+                                elif etype == "final_response":
+                                    full_text = getattr(event, "text", full_text) or full_text
+                                elif etype == "planner":
+                                    intent = getattr(event, "goal", "") or intent
+                                    intent_confidence = getattr(event, "confidence", 0.0) or intent_confidence
+                                elif etype == "execution":
+                                    tool = getattr(event, "target_name", "") or tool
+                                elif etype == "verification":
+                                    verified = getattr(event, "verified", False)
+                                    meta = getattr(event, "details", {}) or meta
+                        else:
+                            result = await jarvis.handle(augmented_message)
+                            full_text = result.get("response", "")
+                            intent = result.get("intent", "")
+                            intent_confidence = result.get("intent_confidence", 0.0)
+                            tool = result.get("tool", "")
+                            verified = result.get("verified", False)
+                            meta = result.get("result", {}) or {}
+                            for i in range(0, len(full_text), 3):
+                                yield ("token", full_text[i:i + 3])
 
-                # Final done event
-                yield f"data: {json.dumps({'done': True, 'response': text, 'actions': actions, 'intent': result.get('intent', ''), 'intent_confidence': result.get('intent_confidence', 0), 'tool': result.get('tool', ''), 'verified': result.get('verified', False), 'total_ms': result.get('total_ms', 0)})}\n\n"
+                    drain = _drain()
+                    try:
+                        while True:
+                            try:
+                                kind, payload = await asyncio.wait_for(
+                                    drain.__anext__(), timeout=STREAM_TIMEOUT_SECONDS
+                                )
+                            except StopAsyncIteration:
+                                break
+                            if kind == "token":
+                                yield f"data: {json.dumps({'token': payload})}\n\n"
+                    except asyncio.TimeoutError:
+                        logger.warning(
+                            "Stream exceeded %.0fs without producing another token "
+                            "(Ollama may be loading the model or generating a long response)",
+                            STREAM_TIMEOUT_SECONDS,
+                        )
+                        notice = f"\n[stream timeout after {STREAM_TIMEOUT_SECONDS:.0f}s — Ollama likely still loading]"
+                        yield f"data: {json.dumps({'token': notice})}\n\n"
+                        if not full_text:
+                            full_text = (
+                                f"(stream timed out before first token — Ollama is "
+                                f"still loading. Waited {STREAM_TIMEOUT_SECONDS:.0f}s.)"
+                            )
+                    except Exception as stream_exc:
+                        logger.error("Stream error: %s", stream_exc, exc_info=True)
+                        if not full_text:
+                            full_text = f"(stream error: {stream_exc})"
+                        yield f"data: {json.dumps({'token': f'\\n[stream error: {stream_exc}]'})}\n\n"
+                    finally:
+                        try:
+                            await drain.aclose()
+                        except Exception:
+                            pass
+
+                    actions = build_actions({"tool": tool, "result": meta if isinstance(meta, dict) else {}})
+                    total_ms = int((time.time() - stream_start) * 1000)
+                    yield f"data: {json.dumps({'done': True, 'response': full_text, 'actions': actions, 'intent': intent, 'intent_confidence': intent_confidence, 'tool': tool, 'verified': verified, 'total_ms': total_ms})}\n\n"
+                except asyncio.CancelledError:
+                    raise
+                except Exception as outer_exc:
+                    logger.error("event_stream fatal: %s", outer_exc, exc_info=True)
+                    yield f"data: {json.dumps({'done': True, 'response': f'(error: {outer_exc})', 'actions': [], 'intent': '', 'intent_confidence': 0, 'tool': '', 'verified': False, 'total_ms': 0})}\n\n"
 
             return StreamingResponse(
                 event_stream(),
@@ -338,9 +489,26 @@ async def chat(request: Request):
                 },
             )
 
-        # Regular JSON response
+        # Regular JSON response — bound the call so a stuck Ollama doesn't
+        # hold the client forever. The previous 30s cap is too tight when
+        # the model is still warming up.
         jarvis = await get_jarvis()
-        result = await jarvis.handle(message)
+        try:
+            result = await asyncio.wait_for(jarvis.handle(augmented_message), timeout=HANDLE_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            logger.warning("handle() exceeded %.0fs timeout", HANDLE_TIMEOUT_SECONDS)
+            result = {
+                "response": (
+                    f"(JARVIS took longer than {HANDLE_TIMEOUT_SECONDS:.0f}s to respond. "
+                    "Ollama may still be loading the model on first use — try again in a moment.)"
+                ),
+                "intent": "timeout",
+                "intent_confidence": 0.0,
+                "tool": "",
+                "verified": False,
+                "total_ms": int(HANDLE_TIMEOUT_SECONDS * 1000),
+                "result": {},
+            }
         actions = build_actions(result)
 
         return {
@@ -360,7 +528,7 @@ async def chat(request: Request):
         logger.error("Chat error: %s", e, exc_info=True)
         return {
             "response": f"Error: {e}",
-            "session_id": session_id if 'session_id' in dir() else "default",
+            "session_id": session_id or "default",
             "timestamp": datetime.now().isoformat(),
             "actions": None,
             "suggestions": None,
@@ -518,7 +686,23 @@ async def websocket_endpoint(websocket: WebSocket):
 
             if msg_type == "chat":
                 jarvis = await get_jarvis()
-                result = await jarvis.handle(data.get("message", ""))
+                try:
+                    result = await asyncio.wait_for(
+                        jarvis.handle(data.get("message", "")),
+                        timeout=HANDLE_TIMEOUT_SECONDS,
+                    )
+                except asyncio.TimeoutError:
+                    result = {
+                        "response": (
+                            f"(JARVIS took longer than {HANDLE_TIMEOUT_SECONDS:.0f}s to respond.)"
+                        ),
+                        "intent": "timeout",
+                        "intent_confidence": 0.0,
+                        "tool": "",
+                        "verified": False,
+                        "total_ms": int(HANDLE_TIMEOUT_SECONDS * 1000),
+                        "result": {},
+                    }
                 actions = build_actions(result)
                 await websocket.send_json({
                     "type": "chat_response",
@@ -614,7 +798,18 @@ async def process_log_broadcasts():
 
 if __name__ == "__main__":
     print("  JARVIS Desktop Backend")
-    print("  API:      http://localhost:8001")
-    print("  WebSocket: ws://localhost:8001/ws")
+    print(f"  API:       http://localhost:8001")
+    print(f"  WebSocket: ws://localhost:8001/ws")
+    print(f"  handle timeout:     {HANDLE_TIMEOUT_SECONDS:.0f}s")
+    print(f"  stream timeout:     {STREAM_TIMEOUT_SECONDS:.0f}s")
+    print(f"  ollama warmup max:  {OLLAMA_WARMUP_TIMEOUT:.0f}s")
     print()
-    uvicorn.run(app, host="0.0.0.0", port=8001, reload=False)
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8001,
+        reload=False,
+        timeout_keep_alive=75,
+        # Don't let uvicorn kill long-running handlers mid-stream.
+        h11_max_incomplete_event_size=None,
+    )

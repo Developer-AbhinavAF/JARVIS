@@ -1,0 +1,70 @@
+import subprocess
+import time
+import pyautogui as pg
+import asyncio
+import edge_tts
+import pygame
+import os
+
+VOICE = "en-IN-PrabhatNeural"
+
+pygame.mixer.init()
+
+
+async def speak(text):
+    filename = "temp.mp3"
+
+    try:
+        communicate = edge_tts.Communicate(
+            text=text,
+            voice=VOICE
+        )
+
+        await communicate.save(filename)
+
+        pygame.mixer.music.load(filename)
+        pygame.mixer.music.play()
+
+        while pygame.mixer.music.get_busy():
+            await asyncio.sleep(0.1)
+
+        pygame.mixer.music.unload()
+
+    finally:
+        if os.path.exists(filename):
+            os.remove(filename)
+
+
+async def main():
+    await speak("Limit exceeded. doosre GPU mein shift kar raha hun, please kuch der apna haath keyboard aur mouse se door rakhe.")
+
+asyncio.run(main())
+chrome_path = r"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+
+url = "https://www.kaggle.com/code/developerabhinav/jarvis-model/edit"
+
+# profile = "Default"      # Ya "Default", "Profile 1", "Profile 2", etc.
+profile = "Default"
+
+subprocess.Popen([
+    chrome_path,
+    f"--profile-directory={profile}",
+    url
+])
+
+time.sleep(18)
+pg.moveTo(700, 500, duration=.2)
+pg.scroll(700)
+pg.scroll(700)
+pg.scroll(700)
+pg.scroll(700)
+time.sleep(1)
+pg.moveTo(411, 181, duration=.2)
+time.sleep(3)
+pg.click()
+time.sleep(92)
+pg.hotkey("win", "m")
+async def last():
+    await speak("Saath dene ke liye dhanyavaad!. shifting complete ho gaya hai. ab aap apna kaam shuru kar sakte hain.")
+
+asyncio.run(last())

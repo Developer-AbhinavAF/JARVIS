@@ -79,7 +79,12 @@ class ContextEngine:
         logger.debug(f"Added context: {user_input[:50]}...")
     
     def resolve_reference(self, reference: str) -> Optional[Any]:
-        """Resolve pronoun references to actual entities."""
+        """Resolve pronoun references to actual entities.
+        
+        Note: This uses keyword matching for pronouns (there, that, it, this, he, she, they)
+        which is legitimate reference resolution, not command routing. This is acceptable
+        as it resolves linguistic references, not command keywords.
+        """
         reference_lower = reference.lower().strip()
         
         # Handle "there"

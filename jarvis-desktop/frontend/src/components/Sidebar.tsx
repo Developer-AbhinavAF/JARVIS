@@ -9,6 +9,7 @@ import {
   Plus,
   Terminal,
   UserRound,
+  Phone,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -19,6 +20,7 @@ const navItems = [
   { id: 'pc-control', label: 'PC Control', icon: Monitor },
   { id: 'memory', label: 'Memory Center', icon: Brain },
   { id: 'logs', label: 'System Logs', icon: Terminal },
+  { id: 'phone', label: 'Phone', icon: Phone },
   { id: 'assistant', label: 'Smart Assistant', icon: Sparkles },
   { id: 'plugins', label: 'Plugins', icon: Plus, badge: 'NEW' },
   { id: 'settings', label: 'Settings', icon: Settings },

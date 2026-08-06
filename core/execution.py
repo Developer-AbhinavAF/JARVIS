@@ -1,6 +1,10 @@
 """execution — Enhanced tool execution engine with verification.
 
+DEPRECATED: This is the legacy execution engine being replaced by execution_first.
+
 Pipeline: User Input → Context → Memory → QWEN3 → Planner → Tool Chain → Executor → Verification → Response → Speech
+
+TODO: Migrate all execution logic to execution_first.ExecutionFirstRuntime.
 """
 
 from __future__ import annotations
@@ -16,7 +20,6 @@ from core.tools import ToolResult, tool_registry
 from core.planner_engine import planner_engine, ExecutionPlan, PlanResult
 from core.tool_chain_engine import tool_chain_engine, ToolChain, ChainExecutionResult
 from core.context_engine import context_engine
-from core.memory_engine import memory_engine
 
 try:
     from dotenv import load_dotenv
@@ -173,13 +176,9 @@ class ExecutionEngine:
             self._traces.append(trace)
             self._last_trace = trace
             
-            # Record mistake
-            memory_engine.record_mistake(
-                input_text=user_input,
-                expected="successful execution",
-                actual=str(e),
-                category="execution"
-            )
+            # TODO: Record mistake to execution_first.MemoryStore when integrated
+            # For now, just log the error
+            logger.error(f"Execution failed: {e}")
             return result
 
     async def execute_chain(self, chain: ToolChain) -> ChainExecutionResult:
@@ -252,20 +251,11 @@ class ExecutionEngine:
                                        params: Dict[str, Any], result: ToolResult) -> None:
         """Save successful execution to memory for learning."""
         try:
-            # Add to conversation history
-            memory_engine.add_conversation_entry(
-                role="user",
-                content=user_input,
-                intent="tool_execution",
-                tool=tool_name
-            )
+            # TODO: Add to conversation history in execution_first.MemoryStore when integrated
+            # For now, skip conversation history logging
             
-            # Extract and save relevant information
-            if tool_name == "save_memory":
-                key = params.get("key", "")
-                value = params.get("value", "")
-                if key and value:
-                    memory_engine.save_memory(key, value, "user_provided")
+            # TODO: Extract and save relevant information to MemoryStore when integrated
+            # For now, skip memory extraction
             
         except Exception as e:
             logger.warning(f"Failed to save execution to memory: {e}")

@@ -1,5 +1,7 @@
 """tool_chain_engine — Advanced tool chaining with data flow and error recovery.
 
+DEPRECATED: This is the legacy tool chain engine being replaced by execution_first.
+
 Supports:
 - Sequential chains
 - Parallel execution
@@ -8,6 +10,8 @@ Supports:
 - Error recovery and rollback
 - Chain templates
 - Custom chains
+
+TODO: Migrate tool chaining logic to execution_first dynamic reasoning.
 """
 
 from __future__ import annotations

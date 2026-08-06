@@ -11,14 +11,38 @@ import json
 import time
 import logging
 import threading
+import urllib.request
 from dataclasses import dataclass, field
-from typing import Any, AsyncGenerator
-from pathlib import Path
+from typing import AsyncGenerator
 from abc import ABC, abstractmethod
 
-import httpx
+try:
+    import httpx
+except ImportError:  # pragma: no cover - optional dependency in lightweight envs
+    httpx = None
 
 logger = logging.getLogger(__name__)
+
+
+def check_tunnel_sync() -> tuple[bool, str]:
+    """Synchronous heartbeat for the Ollama ngrok tunnel (boot-time checks).
+
+    Returns (reachable, detail). Uses urllib so it works without an event loop.
+    """
+    url = os.getenv("OLLAMA_BASE_URL", "https://kiersten-nonpunishable-carry.ngrok-free.dev").rstrip("/")
+    model = os.getenv("OLLAMA_MODEL", "qwen2.5:14b")
+    try:
+        req = urllib.request.Request(
+            url + "/api/tags",
+            headers={"ngrok-skip-browser-warning": "true"},
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode())
+        names = [m.get("name", "") for m in data.get("models", [])]
+        reachable = any(model in n for n in names or [""])
+        return reachable, f"{'UP' if reachable else 'UP (model missing)'} ({', '.join(names) or 'no models'})"
+    except Exception as e:
+        return False, f"DOWN ({e.__class__.__name__})"
 
 
 @dataclass
@@ -56,6 +80,8 @@ class BaseProvider(ABC):
 class OpenAICompatibleProvider(BaseProvider):
     def __init__(self, info: ProviderInfo) -> None:
         self.info = info
+        if httpx is None:
+            raise RuntimeError("httpx is required for network-backed providers")
         self._client = httpx.AsyncClient(timeout=60.0, verify=False)
 
     async def chat(self, messages: list[dict[str, str]], model: str = "", **kwargs) -> RouterResponse:
@@ -67,6 +93,8 @@ class OpenAICompatibleProvider(BaseProvider):
                 headers={"Authorization": f"Bearer {self.info.api_key}", "Content-Type": "application/json"},
                 json={"model": model, "messages": messages, "stream": False, **kwargs},
             )
+            if resp.status_code != 200:
+                raise RuntimeError(f"{self.info.name} HTTP {resp.status_code}: {resp.text[:120]}")
             data = resp.json()
             content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
             self.info.latency_ms = (time.time() - start) * 1000
@@ -85,6 +113,8 @@ class OpenAICompatibleProvider(BaseProvider):
                 json={"model": model, "messages": messages, "stream": True, **kwargs},
                 timeout=120.0,
             ) as resp:
+                if resp.status_code != 200:
+                    raise RuntimeError(f"{self.info.name} HTTP {resp.status_code}")
                 async for line in resp.aiter_lines():
                     if line.startswith("data: "):
                         data_str = line[6:].strip()
@@ -102,38 +132,34 @@ class OpenAICompatibleProvider(BaseProvider):
 
 
 class OllamaProvider(BaseProvider):
-    def __init__(self, base_url: str = "http://localhost:11434", model: str = "qwen3:1.7b-q4_k_m") -> None:
+    # Ngrok warning bypass header is required for ngrok-free endpoints
+    NGROK_HEADERS = {"ngrok-skip-browser-warning": "true"}
+
+    def __init__(self, base_url: str = "https://kiersten-nonpunishable-carry.ngrok-free.dev", model: str = "qwen2.5:14b") -> None:
         self.base_url = base_url.rstrip("/")
-        self.model = model  # QWEN3:1.7B Q4_K_M as primary
-        self._client = httpx.AsyncClient(timeout=120.0, verify=False)
+        self.model = model  # QWEN2.5:14B via ngrok tunnel as primary
+        if httpx is None:
+            raise RuntimeError("httpx is required for network-backed providers")
+        self._client = httpx.AsyncClient(timeout=120.0, verify=False, headers=self.NGROK_HEADERS)
 
     async def chat(self, messages: list[dict[str, str]], model: str = "", **kwargs) -> RouterResponse:
         start = time.time()
         model = model or self.model
         try:
-            logger.info(f"Sending to Ollama: model={model}, messages={len(messages)}")
-            logger.info(f"Message preview: {messages[0]['content'][:100] if messages else 'none'}")
             resp = await self._client.post(
                 f"{self.base_url}/api/chat",
                 json={"model": model, "messages": messages, "stream": False, **kwargs},
             )
+            if resp.status_code != 200:
+                raise RuntimeError(f"Ollama HTTP {resp.status_code}: {resp.text[:120]}")
             data = resp.json()
-            logger.info(f"Ollama raw response status: {resp.status_code}")
-            logger.info(f"Ollama raw response keys: {data.keys()}")
-            logger.info(f"Ollama raw response: {data}")
             content = data.get("message", {}).get("content", "")
-            logger.info(f"Ollama extracted content: '{content}'")
             if not content:
-                logger.warning("Ollama returned empty content, trying to extract from different path")
-                # Try alternative extraction methods
-                if "content" in data:
-                    content = data["content"]
-                elif "response" in data:
-                    content = data["response"]
+                content = data.get("content", "") or data.get("response", "")
             latency_ms = (time.time() - start) * 1000
             return RouterResponse(content=content, success=bool(content), provider="ollama", model=model, latency_ms=latency_ms)
         except Exception as e:
-            logger.error(f"Ollama error: {e}")
+            logger.error("Ollama error: %s", e)
             return RouterResponse(error=str(e), provider="ollama")
 
     async def chat_stream(self, messages: list[dict[str, str]], model: str = "", **kwargs) -> AsyncGenerator[str, None]:
@@ -145,6 +171,8 @@ class OllamaProvider(BaseProvider):
                 json={"model": model, "messages": messages, "stream": True, **kwargs},
                 timeout=120.0,
             ) as resp:
+                if resp.status_code != 200:
+                    raise RuntimeError(f"Ollama HTTP {resp.status_code}")
                 async for line in resp.aiter_lines():
                     if line.strip():
                         try:
@@ -198,9 +226,9 @@ class AIRouter:
         self._init_providers()
 
     def _init_providers(self) -> None:
-        # Initialize Ollama FIRST as primary (QWEN3:1.7B Q4_K_M)
-        ollama_model = os.getenv("OLLAMA_MODEL", "qwen3:1.7b-q4_k_m")
-        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        # Initialize Ollama FIRST as primary (QWEN2.5:14B via ngrok tunnel)
+        ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5:14b")
+        ollama_url = os.getenv("OLLAMA_BASE_URL", "https://kiersten-nonpunishable-carry.ngrok-free.dev")
         self._ollama = OllamaProvider(base_url=ollama_url, model=ollama_model)
         
         # Groq as secondary

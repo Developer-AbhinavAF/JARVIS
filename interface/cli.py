@@ -54,6 +54,20 @@ except ImportError:
 console = Console() if RICH_AVAILABLE else None
 
 
+def _enable_ansi() -> None:
+    """Enable ANSI escape processing on Windows terminals."""
+    if os.name == "nt":
+        try:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.GetStdHandle(-11)
+            mode = ctypes.c_uint32()
+            if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+                kernel32.SetConsoleMode(handle, mode.value | 0x0004)
+        except Exception:
+            pass
+
+
 def typing_effect(text: str, delay: float = 0.02) -> None:
     for char in text:
         print(char, end="", flush=True)
@@ -75,7 +89,10 @@ def print_banner() -> None:
   3. Debug Mode
   4. Exit
 """
-    print(banner)
+    try:
+        print(banner, flush=True)
+    except Exception:
+        pass  # Ignore print errors
 
 
 class TextMode:
@@ -103,29 +120,19 @@ class TextMode:
                 return ""
 
     async def _handle_streaming(self, user_input: str) -> None:
-        """Stream response token by token — text only, no speech."""
-        _GRAY = "\x1b[90m"
-        _RESET = "\x1b[0m"
+        """Stream response token by token — thinking rendered in faded grey."""
         print("Jarvis: ", end="", flush=True)
-        thinking = False
         async for token in self.jarvis.handle_stream(user_input):
-            if token.startswith("\x00"):
-                if not thinking:
-                    thinking = True
-                    print(f"\n{_GRAY}│ ", end="", flush=True)
-                print(f"{_GRAY}{token[1:]}{_RESET}", end="", flush=True)
+            if isinstance(token, str) and token.startswith("\x00"):
+                # Thinking tokens: render faded/dim grey
+                print(f"\033[2m{token[1:]}\033[0m", end="", flush=True)
             else:
-                if thinking:
-                    thinking = False
-                    print(f"\n{_GRAY}╰───╯{_RESET}\n", end="", flush=True)
                 print(token, end="", flush=True)
-            await asyncio.sleep(0.01)
-        if thinking:
-            print(f"\n{_GRAY}╰───╯{_RESET}", end="", flush=True)
         print()
 
     def run(self) -> None:
         os.system("cls" if os.name == "nt" else "clear")
+        _enable_ansi()
         if RICH_AVAILABLE:
             console.print(Panel("[cyan]JARVIS Text Mode[/]", subtitle="Type 'quit' to exit"), style="bold")
         else:
@@ -198,13 +205,7 @@ def boot_jarvis(debug: bool = False):
     jarvis = JARVIS()
     if debug:
         jarvis.enable_debug()
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        loop.run_until_complete(jarvis.boot())
-    except Exception as e:
-        print(f"\n  Boot failed: {e}")
-        sys.exit(1)
+    jarvis.boot()
     return jarvis
 
 
@@ -243,6 +244,8 @@ def main() -> None:
         choice = input("  Select (1/2/3/4): ").strip()
     except (EOFError, KeyboardInterrupt):
         choice = "4"
+    except Exception:
+        choice = "4"
 
     if choice == "1":
         TextMode(jarvis).run()
@@ -263,35 +266,40 @@ def main() -> None:
             console.print("[red]Speech engine unavailable. Falling back to text mode.[/]")
             TextMode(jarvis).run()
             return
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        while True:
+
+        # Full-duplex conversation: mic always on, barge-in enabled.
+        def _voice_handler(user_input: str) -> str:
+            loop = asyncio.new_event_loop()
             try:
-                user_input = speech_engine.listen(timeout=5.0)
-                if not user_input:
-                    continue
-                if RICH_AVAILABLE:
-                    console.print(f"[dim]You:[/] {user_input}")
-                else:
-                    print(f"You: {user_input}")
-                if user_input.lower() in ("quit", "exit", "q"):
-                    break
                 result = loop.run_until_complete(jarvis.handle(user_input))
-                response = result.get("response", "")
-                if RICH_AVAILABLE:
-                    console.print(Panel(response, border_style="green"))
-                else:
-                    print(f"\n  {response}\n")
-                if result.get("success") and not result.get("verified"):
-                    continue
-            except KeyboardInterrupt:
-                break
-        loop.run_until_complete(jarvis.shutdown())
+            finally:
+                loop.close()
+            if isinstance(result, dict):
+                return result.get("response", "")
+            return str(result)
+
+        console.print("[dim]Full-duplex voice mode — speak anytime. Ctrl+C to stop.[/]")
+        speech_engine.run_conversation(_voice_handler)
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            speech_engine.stop()
     elif choice == "3":
         jarvis.enable_debug()
         TextMode(jarvis).run()
     else:
-        asyncio.run(jarvis.shutdown())
+        # Shutdown is async, run it
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(jarvis.shutdown())
+        except Exception as e:
+            print(f"Shutdown error: {e}")
+        finally:
+            loop.close()
         print("Goodbye.")
 
 

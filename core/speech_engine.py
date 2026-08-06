@@ -1,23 +1,29 @@
-"""speech_engine — Speech engine with TTS and STT capabilities.
+"""DEPRECATED: core/speech_engine.py — Legacy speech engine.
 
-TTS Priority:
-1. Local TTS (Windows SAPI5, macOS NSSpeechSynthesizer, Linux espeak)
-2. ElevenLabs (API-based, high quality)
-3. pyttsx3 (fallback)
+This module is DEPRECATED and replaced by the production-grade speech engine
+in speech/speech_engine.py.
 
-STT Priority:
-1. Local Whisper
-2. Groq API
-3. OpenAI Whisper
-4. Google Speech
+New location:
+- Use: from speech.speech_engine import SpeechEngine, speech_engine
+- Or: from interface.speech import speech_engine
 
-Features:
-- Text mode (user types, JARVIS speaks)
-- Speech mode (continuous listening, VAD)
-- Multi-language support
-- Real-time streaming
-- Interruption handling
-- Natural conversation flow
+The new speech/ implementation provides:
+- Event-driven architecture
+- Always-on microphone (no fixed timers)
+- Silero VAD with smart endpoint detection
+- faster-whisper STT with fallback chain
+- Instant barge-in interrupt handling
+- Streaming LLM integration
+- Edge-TTS with cache
+- Comprehensive test suite
+
+Migration guide:
+1. Update imports: from speech.speech_engine import speech_engine
+2. Public API is compatible: is_available(), listen(), speak(), etc.
+3. New features: speak_stream(), speak_from_core_stream()
+
+This file is kept for backward compatibility only and will be removed
+in a future version.
 """
 
 from __future__ import annotations

@@ -11,6 +11,7 @@ import LogsSection from '@/components/LogsSection';
 import HomeSection from '@/components/HomeSection';
 import SettingsSection from '@/components/SettingsSection';
 import DocsSection from '@/components/DocsSection';
+import PhoneSection from '@/components/PhoneSection';
 import LoadingScreen from '@/components/LoadingScreen';
 import LearningProgress from '@/components/LearningProgress';
 import ShoppingProgress from '@/components/ShoppingProgress';
@@ -253,6 +254,8 @@ function App() {
         return <MemorySection />;
       case 'logs':
         return <LogsSection />;
+      case 'phone':
+        return <PhoneSection />;
       case 'home':
         return <HomeSection />;
       case 'assistant':

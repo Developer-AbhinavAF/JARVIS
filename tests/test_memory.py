@@ -1,176 +1,202 @@
-"""Memory Tests — 50+ tests for store, search, update, delete, preferences, todos, notes."""
-import sys
-import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-
-import time
-from core.memory_json import json_memory
+"""Tests for memory functionality."""
+import pytest
+import tempfile
+from core.execution_first import MemoryStore, LocalNgramEmbeddings
 
 
-def test_store_and_search():
-    json_memory.store("content", "Python is my favorite programming language", category="general")
-    json_memory.store("content", "I live in New York", category="general")
-    results = json_memory.search_memories("Python")
-    assert len(results) >= 1
-    assert any("Python" in r["value"] for r in results)
-    print("  Memory Store & Search: PASS")
-    return 1, 1
+class TestMemoryStore:
+    """Test MemoryStore class."""
+    
+    def test_memory_store_initialization(self):
+        """Test memory store initialization."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            memory = MemoryStore(tmpdir)
+            assert memory.root.name == tmpdir
+            assert "facts" in memory._cache
+            assert "conversation" in memory._cache
+            assert "mistakes" in memory._cache
+    
+    def test_remember_fact(self):
+        """Test remembering a fact."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            memory = MemoryStore(tmpdir)
+            result = memory.remember("name", "Ada", "facts")
+            assert result.success is True
+            assert result.verified is True
+            assert "name" in memory._cache["facts"]
+    
+    def test_retrieve_fact(self):
+        """Test retrieving a fact."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            memory = MemoryStore(tmpdir)
+            memory.remember("name", "Ada", "facts")
+            
+            assert memory._cache["facts"]["name"]["value"] == "Ada"
+    
+    def test_remember_multiple_categories(self):
+        """Test remembering across categories."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            memory = MemoryStore(tmpdir)
+            
+            memory.remember("name", "Ada", "facts")
+            memory.remember("language", "Python", "preferences")
+            memory.remember("project", "JARVIS", "goals")
+            
+            assert "name" in memory._cache["facts"]
+            assert "language" in memory._cache["preferences"]
+            assert "project" in memory._cache["goals"]
+    
+    def test_recall_with_embeddings(self):
+        """Test semantic recall with embeddings."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            embeddings = LocalNgramEmbeddings()
+            memory = MemoryStore(tmpdir, embeddings)
+            
+            memory.remember("name", "Ada Lovelace", "facts")
+            memory.remember("birth_year", "1815", "facts")
+            
+            result = memory.recall("name", limit=5)
+            assert result.success is True
+            assert result.verified is True
+            assert "matches" in result.data
+    
+    def test_recall_without_embeddings(self):
+        """Test recall without embeddings returns error."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            memory = MemoryStore(tmpdir, None)
+            result = memory.recall("name", limit=5)
+            assert result.success is False
+            assert "unavailable" in result.error
+    
+    def test_persistence(self):
+        """Test memory persistence across instances."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # First instance
+            memory1 = MemoryStore(tmpdir)
+            memory1.remember("test", "value", "facts")
+            
+            # Second instance
+            memory2 = MemoryStore(tmpdir)
+            assert "test" in memory2._cache["facts"]
+            assert memory2._cache["facts"]["test"]["value"] == "value"
+    
+    def test_embedding_storage(self):
+        """Test embedding storage and retrieval."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            embeddings = LocalNgramEmbeddings()
+            memory = MemoryStore(tmpdir, embeddings)
+            
+            memory.remember("test", "value", "facts")
+            
+            # Check embedding was stored
+            entry = memory._cache["facts"]["test"]
+            assert "embedding" in entry
+            assert len(entry["embedding"]) == embeddings.dimension
+    
+    def test_conversation_history(self):
+        """Test conversation history tracking."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            memory = MemoryStore(tmpdir)
+            
+            # Conversation is a list by default
+            assert isinstance(memory._cache["conversation"], list)
+    
+    def test_mistakes_tracking(self):
+        """Test mistakes tracking."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            memory = MemoryStore(tmpdir)
+            
+            memory.remember("mistake1", "Test mistake", "mistakes")
+            assert "mistake1" in memory._cache["mistakes"]
+    
+    def test_update_existing_fact(self):
+        """Test updating an existing fact."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            memory = MemoryStore(tmpdir)
+            
+            memory.remember("name", "Ada", "facts")
+            memory.remember("name", "Ada Lovelace", "facts")
+            
+            assert memory._cache["facts"]["name"]["value"] == "Ada Lovelace"
+    
+    def test_unsupported_category(self):
+        """Test error on unsupported category."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            memory = MemoryStore(tmpdir)
+            result = memory.remember("test", "value", "unsupported")
+            assert result.success is False
+            assert "Unsupported" in result.error
 
 
-def test_empty_search():
-    results = json_memory.search_memories("xyznonexistent12345")
-    assert len(results) == 0
-    print("  Memory Empty Search: PASS")
-    return 1, 1
+class TestMemoryEmbeddings:
+    """Test memory embedding integration."""
+    
+    def test_embedding_similarity(self):
+        """Test embedding similarity calculation."""
+        embeddings = LocalNgramEmbeddings()
+        
+        v1 = embeddings.embed(["hello world"])[0]
+        v2 = embeddings.embed(["hello world"])[0]
+        v3 = embeddings.embed(["goodbye world"])[0]
+        
+        # Same text should have same embedding
+        assert v1 == v2
+        
+        # Different text should have different embedding
+        assert v1 != v3
+    
+    def test_embedding_dimension_consistency(self):
+        """Test embedding dimension is consistent."""
+        embeddings = LocalNgramEmbeddings()
+        
+        texts = ["hello", "world", "test"]
+        vectors = embeddings.embed(texts)
+        
+        for vector in vectors:
+            assert len(vector) == embeddings.dimension
 
 
-def test_update():
-    json_memory.store("key", "original content for update test", category="general")
-    results = json_memory.search_memories("original content for update test")
-    if results:
-        key = results[0]["key"]
-        ok = json_memory.update(key, "updated content")
-        assert ok
-        results2 = json_memory.search_memories("updated content")
-        assert len(results2) >= 1
-    print("  Memory Update: PASS")
-    return 1, 1
-
-
-def test_delete():
-    json_memory.store("key", "content to delete", category="general")
-    results = json_memory.search_memories("content to delete")
-    if results:
-        key = results[0]["key"]
-        ok = json_memory.delete(key)
-        assert ok
-        results2 = json_memory.search_memories("content to delete")
-        assert len(results2) == 0
-    print("  Memory Delete: PASS")
-    return 1, 1
-
-
-def test_summarize():
-    stats = json_memory.get_stats()
-    assert stats
-    assert stats["memories_count"] >= 0
-    print("  Memory Summarize: PASS")
-    return 1, 1
-
-
-def test_export_import():
-    # Skip export/import for JSON system (simpler structure)
-    print("  Memory Export/Import: SKIP (JSON-based system)")
-    return 1, 1
-
-
-def test_preferences():
-    json_memory.save_memory("preference", "TestUser", confidence=0.9)
-    val = memory.get_preference("name")
-    assert val == "TestUser"
-
-    json_memory.save_memory("preference", "25", confidence=0.9)
-    memories = json_memory.get_all_memories()
-    assert "preference" in memories
-    assert memories["preference"]["value"] == "25"
-
-    print("  Memory Preferences: PASS")
-    return 1, 1
-
-
-def test_conversations():
-    json_memory.add_conversation_entry("user", "Hello")
-    json_memory.add_conversation_entry("assistant", "Hi there!")
-    convos = json_memory.get_conversation_history(10)
-    assert len(convos) >= 2
-    print("  Memory Conversations: PASS")
-    return 1, 1
-
-
-def test_notes():
-    # Notes not implemented in JSON system yet
-    print("  Memory Notes: SKIP (not implemented)")
-    return 1, 1
-
-
-def test_todos():
-    # Todos not implemented in JSON system yet
-    print("  Memory Todos: SKIP (not implemented)")
-    return 1, 1
-
-
-def test_reminders():
-    # Reminders not implemented in JSON system yet
-    print("  Memory Reminders: SKIP (not implemented)")
-    assert len(reminders) >= 1
-    if reminders:
-        memory.mark_reminder_fired(reminders[0]["id"])
-    print("  Memory Reminders: PASS")
-    return 1, 1
-
-
-def test_stats():
-    stats = memory.get_stats()
-    assert "memories" in stats
-    assert "memories_count" in stats
-    assert "conversation_entries" in stats
-    print("  Memory Stats: PASS")
-    return 1, 1
-
-
-def test_singleton():
-    from core.memory_json import json_memory
-    m1 = json_memory
-    m2 = json_memory
-    assert m1 is m2
-    print("  Memory Singleton: PASS")
-    return 1, 1
-
-
-def test_categories():
-    json_memory.store("content", "test category entry", category="test_category")
-    results = json_memory.search_memories("test category entry")
-    assert len(results) >= 1
-    print("  Memory Categories: PASS")
-    return 1, 1
-
-
-def test_performance():
-    start = time.time()
-    for i in range(50):
-        json_memory.store("key", f"perf test entry {i}", category="general")
-    elapsed = (time.time() - start) * 1000
-    avg = elapsed / 50
-    print(f"  Memory Performance: {avg:.1f}ms avg (50 writes)")
-    return 1 if avg < 50 else 0, 1
-
-
-def test_tags():
-    json_memory.store("content", "tagged entry", category="general")
-    print("  Memory Tags: PASS")
-    return 1, 1
-
-
-def run():
-    print("\n=== Memory Tests ===")
-    total_passed = 0
-    total = 0
-    tests = [
-        test_store_and_search, test_empty_search, test_update, test_delete,
-        test_summarize, test_export_import, test_preferences, test_conversations,
-        test_notes, test_todos, test_reminders, test_stats, test_singleton,
-        test_categories, test_performance, test_tags,
-    ]
-    for t in tests:
-        try:
-            p, tot = t()
-            total_passed += p
-            total += tot
-        except Exception as e:
-            print(f"  {t.__name__}: FAIL ({e})")
-            total += 1
-    return total_passed, total
+class TestMemoryIntegration:
+    """Test memory integration scenarios."""
+    
+    def test_user_profile_building(self):
+        """Test building user profile from memory."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            memory = MemoryStore(tmpdir)
+            
+            memory.remember("name", "Ada", "facts")
+            memory.remember("language", "Python", "preferences")
+            memory.remember("goal", "Build AI", "goals")
+            
+            profile = {
+                "facts": memory._cache["facts"],
+                "preferences": memory._cache["preferences"],
+                "goals": memory._cache["goals"]
+            }
+            
+            assert "name" in profile["facts"]
+            assert "language" in profile["preferences"]
+            assert "goal" in profile["goals"]
+    
+    def test_learning_from_mistakes(self):
+        """Test learning from mistakes."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            memory = MemoryStore(tmpdir)
+            
+            memory.remember("mistake_1", "Used wrong tool", "mistakes")
+            memory.remember("mistake_2", "Misunderstood intent", "mistakes")
+            
+            assert len(memory._cache["mistakes"]) == 2
+    
+    def test_knowledge_storage(self):
+        """Test knowledge storage."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            memory = MemoryStore(tmpdir)
+            
+            # Knowledge is stored in knowledge directory
+            knowledge_dir = memory.knowledge
+            assert knowledge_dir.exists()
 
 
 if __name__ == "__main__":
-    run()
+    pytest.main([__file__, "-v"])

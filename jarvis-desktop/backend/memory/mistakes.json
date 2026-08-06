@@ -1,0 +1,14 @@
+[
+  {
+    "tool": "youtube_video_info",
+    "args": {},
+    "error": "UnifiedToolRegistry._handle_youtube_video_info() got an unexpected keyword argument 'app_name'",
+    "timestamp": 1785938079.2129552
+  },
+  {
+    "tool": "youtube_search",
+    "args": {},
+    "error": "UnifiedToolRegistry._handle_youtube_search() got an unexpected keyword argument 'app_name'",
+    "timestamp": 1785939421.6032388
+  }
+]

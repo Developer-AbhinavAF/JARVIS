@@ -1,0 +1,10 @@
+{
+  "test_memory_key": {
+    "key": "test_memory_key",
+    "value": "test_memory_value",
+    "category": "facts",
+    "timestamp": 1785732978.4904609,
+    "embedding": null,
+    "metadata": {}
+  }
+}

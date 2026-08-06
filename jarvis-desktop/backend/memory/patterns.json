@@ -1,0 +1,12 @@
+[
+  {
+    "trigger_tool": "youtube_video_info",
+    "rule": "Avoid UnifiedToolRegistry._handle_youtube_video_info() got an unexpected keyword argument 'app_name' when invoking youtube_video_info",
+    "learned_at": 1785938079.2129552
+  },
+  {
+    "trigger_tool": "youtube_search",
+    "rule": "Avoid UnifiedToolRegistry._handle_youtube_search() got an unexpected keyword argument 'app_name' when invoking youtube_search",
+    "learned_at": 1785939421.6032388
+  }
+]
