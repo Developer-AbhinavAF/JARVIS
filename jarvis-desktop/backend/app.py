@@ -118,12 +118,13 @@ def _get_boot_lock() -> asyncio.Lock:
     return _boot_lock
 
 
-# Configurable timeouts — Ollama's first response after boot can take a
-# long time while the model is loaded / warmed up. These can be overridden
-# via environment variables without code changes.
-HANDLE_TIMEOUT_SECONDS = float(os.getenv("JARVIS_HANDLE_TIMEOUT", "180"))
-STREAM_TIMEOUT_SECONDS = float(os.getenv("JARVIS_STREAM_TIMEOUT", "300"))
-OLLAMA_WARMUP_TIMEOUT = float(os.getenv("OLLAMA_WARMUP_TIMEOUT", "60"))
+# Configurable timeouts — Ollama's first response after boot (loading qwen2.5:14b
+# on the cloud GPU + ngrok round-trip) can take a long time. Generous defaults
+# to keep the UI from looking hung while the model is warming up. Overridable
+# via environment variables.
+HANDLE_TIMEOUT_SECONDS = float(os.getenv("JARVIS_HANDLE_TIMEOUT", "240"))   # 4 min
+STREAM_TIMEOUT_SECONDS = float(os.getenv("JARVIS_STREAM_TIMEOUT", "360"))   # 6 min (first token)
+OLLAMA_WARMUP_TIMEOUT = float(os.getenv("OLLAMA_WARMUP_TIMEOUT", "180"))    # 3 min warmup cap
 
 
 async def get_jarvis():
@@ -809,7 +810,9 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=8001,
         reload=False,
-        timeout_keep_alive=75,
+        # Long keep-alive so the SSE stream doesn't get killed mid-response
+        # while the cloud GPU is generating qwen2.5:14b tokens.
+        timeout_keep_alive=180,
         # Don't let uvicorn kill long-running handlers mid-stream.
         h11_max_incomplete_event_size=None,
     )

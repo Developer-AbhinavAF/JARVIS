@@ -65,10 +65,21 @@ class JarvisCore:
         return {"status": "booted", "health": health}
 
     def _async_warmup_runner(self) -> None:
+        """Run warmup in a private event loop on the background thread.
+
+        The warmup itself uses a dedicated httpx client (not the shared
+        one) so this private loop doesn't poison the main thread's shared
+        client when it tears down.
+        """
         loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(self.brain_adapter.warmup())
-        loop.close()
+        try:
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(self.brain_adapter.warmup())
+        finally:
+            try:
+                loop.close()
+            except Exception:
+                pass
 
     async def process_stream(
         self, user_input: str, history: Optional[list] = None

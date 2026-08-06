@@ -251,7 +251,7 @@ class JARVIS:
                             holder["verified"] = getattr(event, "verified", False)
                             holder["details"] = getattr(event, "details", {})
 
-                await asyncio.wait_for(_collect(), timeout=30.0)
+                await asyncio.wait_for(_collect(), timeout=120.0)
                 response_text = holder.get("text", "")
                 intent = holder.get("intent", "unknown")
                 intent_confidence = holder.get("confidence", 0.0)

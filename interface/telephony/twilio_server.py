@@ -153,15 +153,29 @@ def create_voice_app() -> FastAPI:
             session = call_manager.create_session(call_sid, caller)
             logger.info("📞 Session created for call %s", call_sid)
 
-            # Get greeting from JARVIS
-            greeting = "Hello, I am Jarvis. How can I help you?"
+            # Get greeting from JARVIS with time-based greeting
+            import datetime
+            hour = datetime.datetime.now().hour
+            if 5 <= hour < 12:
+                time_greeting = "Good morning"
+            elif 12 <= hour < 17:
+                time_greeting = "Good afternoon"
+            elif 17 <= hour < 21:
+                time_greeting = "Good evening"
+            else:
+                time_greeting = "Good night"
+            
+            greeting = f"{time_greeting} Sir! I am Jarvis. How can I help you?"
+            
             try:
                 jarvis = await _get_jarvis()
                 result = await asyncio.wait_for(
                     jarvis.handle("hello"),
                     timeout=30.0,
                 )
-                greeting = result.get("response", greeting)
+                jarvis_greeting = result.get("response", "")
+                if jarvis_greeting and "jarvis" not in jarvis_greeting.lower():
+                    greeting = f"{time_greeting} Sir! {jarvis_greeting}"
                 logger.info("Greeting: %s", greeting[:80])
             except asyncio.TimeoutError:
                 logger.warning("Greeting timed out, using default greeting")

@@ -221,13 +221,18 @@ class TwilioStreamHandler:
                 chunk_ms=20,  # 20ms chunks for Twilio
             )
 
+            # Stream chunks with minimal delay for streaming effect
+            chunk_count = 0
             for chunk in mulaw_chunks:
                 self.feed_tts_audio(chunk)
-                # Pace audio: sleep ~16ms per 20ms chunk to avoid burst
-                await asyncio.sleep(0.016)
+                chunk_count += 1
+                # Minimal pacing to maintain streaming while avoiding burst
+                if chunk_count % 5 == 0:  # Every 5 chunks (100ms)
+                    await asyncio.sleep(0.01)
 
             # Send mark to indicate end of this utterance
             await self.sendmark(f"tts-{int(time.time() * 1000)}")
+            logger.debug("Streamed %d audio chunks for: %s", chunk_count, text[:30])
 
         except Exception as e:
             logger.error("TTS synthesis failed: %s", e)
