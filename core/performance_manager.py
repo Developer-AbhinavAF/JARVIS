@@ -1,8 +1,13 @@
 """core/performance_manager.py — Performance & Resource Manager for JARVIS vNext++.
 
-Monitors system resources (CPU, RAM, VRAM) and dynamically adjusts parameters:
-- High CPU (> 90%): Reduces token output (num_predict), lowers RAG Top-K, throttles workers.
-- Low RAM: Compresses memory, evicts caches, trims context window.
+RESOURCE INDEPENDENCE (mandatory):
+System-resource monitoring is an OPTIONAL diagnostic subsystem. It must
+NEVER control the conversational AI:
+- It is not part of prompt context, refusal logic, tool selection or
+  response generation.
+- adapt_parameters() no longer throttles LLM output based on CPU/RAM.
+- check_system_load() remains available to diagnostics / explicit
+  system-status tools only.
 """
 
 from __future__ import annotations
@@ -19,13 +24,18 @@ logger = logging.getLogger(__name__)
 
 
 class PerformanceManager:
-    """Adaptive resource monitoring and parameter scaling."""
+    """Adaptive resource monitoring and parameter scaling.
+
+    Monitoring is isolated: the chat pipeline calls adapt_parameters(),
+    which never consults system resources. Diagnostics may call
+    check_system_load() independently.
+    """
 
     def __init__(self):
         pass
 
     def check_system_load(self) -> Dict[str, Any]:
-        """Inspect current CPU and RAM usage percentages."""
+        """Inspect current CPU and RAM usage percentages (diagnostics only)."""
         if not PSUTIL_AVAILABLE:
             return {"cpu_percent": 0.0, "ram_percent": 0.0}
         cpu = psutil.cpu_percent(interval=None)
@@ -33,23 +43,13 @@ class PerformanceManager:
         return {"cpu_percent": cpu, "ram_percent": ram}
 
     def adapt_parameters(self, max_tokens: int, top_k_rag: int) -> Tuple[int, int]:
-        """Adjust prediction tokens and RAG Top-K under high hardware strain."""
-        metrics = self.check_system_load()
-        adjusted_tokens = max_tokens
-        adjusted_top_k = top_k_rag
+        """Return parameters unchanged.
 
-        # If CPU load > 90%, scale down expensive parameters
-        if metrics["cpu_percent"] > 90.0:
-            adjusted_tokens = min(max_tokens, 1024)
-            adjusted_top_k = min(top_k_rag, 1)
-            logger.warning(f"High CPU detected ({metrics['cpu_percent']}%). Scaled down parameters.")
-
-        # If RAM load > 85%, scale down context
-        if metrics["ram_percent"] > 85.0:
-            adjusted_top_k = min(adjusted_top_k, 1)
-            logger.warning(f"High RAM usage detected ({metrics['ram_percent']}%). Scaled down RAG retrieval.")
-
-        return adjusted_tokens, adjusted_top_k
+        The conversational AI must be fully independent from system load —
+        a 400-word essay is always generated in full, at full token budget,
+        regardless of CPU/RAM/GPU values.
+        """
+        return max_tokens, top_k_rag
 
 
 performance_manager = PerformanceManager()

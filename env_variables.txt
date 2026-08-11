@@ -52,7 +52,7 @@ GOOGLE_AI_BASE_URL=
 # All API providers (Groq, OpenAI, etc.) are fallbacks if Ollama fails.
 # Install Ollama from: https://ollama.com
 OLLAMA_BASE_URL=
-OLLAMA_MODEL="qwen2.5:14b"
+OLLAMA_MODEL="jarvis-agi"
 
 # ----- Speech Engine ---------------------------------------------------------
 # Text-to-Speech options: "elevenlabs" (cloud) or "pyttsx3" (offline)

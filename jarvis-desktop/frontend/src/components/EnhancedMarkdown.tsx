@@ -1,8 +1,10 @@
 import type { ReactNode } from 'react';
-import { motion } from 'framer-motion';
-import { ExternalLink } from 'lucide-react';
+import { useState } from 'react';
+import { AnimatePresence } from 'framer-motion';
 import { CodeCanvas } from './CodeCanvas';
 import { FileCanvas } from './FileCanvas';
+import { RichInline } from './RichInline';
+import { ImageLightbox } from './ImageLightbox';
 
 interface EnhancedMarkdownProps {
   content: string;
@@ -25,6 +27,7 @@ export function EnhancedMarkdown({ content, className = '' }: EnhancedMarkdownPr
 function MarkdownContent({ content }: { content: string }) {
   const lines = content.split('\n');
   const elements: ReactNode[] = [];
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   let key = 0;
 
   const readList = (start: number, type: 'ul' | 'ol' | 'check') => {
@@ -183,14 +186,21 @@ function MarkdownContent({ content }: { content: string }) {
       const imgUrl = imageMatch[1];
       elements.push(
         <div key={key++} className="my-3">
-          <a href={imgUrl} target="_blank" rel="noopener noreferrer">
+          <button
+            onClick={() => setLightboxUrl(imgUrl)}
+            className="group block cursor-pointer max-w-full"
+            aria-label="Open image fullscreen"
+          >
             <img
               src={imgUrl}
               alt="Generated image"
-              className="max-w-full max-h-96 rounded-lg border border-white/10 object-contain cursor-pointer hover:opacity-90 transition-opacity"
+              className="max-w-full max-h-96 rounded-lg border border-white/10 object-contain transition-opacity group-hover:opacity-90"
               loading="lazy"
             />
-          </a>
+            <span className="mt-1 inline-block text-[10px] text-jarvis-textMuted group-hover:text-jarvis-accentPink">
+              ⤢ View fullscreen
+            </span>
+          </button>
         </div>
       );
       continue;
@@ -207,75 +217,16 @@ function MarkdownContent({ content }: { content: string }) {
     }
   }
 
-  return <>{elements}</>;
+  return (
+    <>
+      {elements}
+      <AnimatePresence>
+        {lightboxUrl && <ImageLightbox src={lightboxUrl} onClose={() => setLightboxUrl(null)} />}
+      </AnimatePresence>
+    </>
+  );
 }
 
 function parseInlineStyles(text: string): ReactNode {
-  const parts: ReactNode[] = [];
-  let remaining = text;
-  let key = 0;
-
-  const patterns = [
-    { regex: /\[([^\]]+)\]\(([^)]+)\)/, type: 'link', className: '' },
-    { regex: /\*\*(.+?)\*\*/, type: 'bold', className: 'font-semibold text-jarvis-text' },
-    { regex: /\*(.+?)\*/, type: 'italic', className: 'italic' },
-    { regex: /`(.+?)`/, type: 'code', className: 'font-mono bg-black/30 px-1.5 py-0.5 rounded text-[0.85em] text-jarvis-accentPink' },
-    { regex: /~~(.+?)~~/, type: 'strike', className: 'line-through opacity-60' },
-    { regex: /==(.+?)==/, type: 'highlight', className: 'rounded bg-yellow-500/20 px-1' },
-  ];
-
-  while (remaining) {
-    let earliestMatch: { pattern: (typeof patterns)[0]; match: RegExpMatchArray; index: number } | null = null;
-
-    for (const pattern of patterns) {
-      const match = remaining.match(pattern.regex);
-      if (match && (!earliestMatch || remaining.indexOf(match[0]) < earliestMatch.index)) {
-        earliestMatch = { pattern, match, index: remaining.indexOf(match[0]) };
-      }
-    }
-
-    if (!earliestMatch || earliestMatch.index === -1) {
-      parts.push(<span key={key++}>{remaining}</span>);
-      break;
-    }
-
-    if (earliestMatch.index > 0) {
-      parts.push(<span key={key++}>{remaining.slice(0, earliestMatch.index)}</span>);
-    }
-
-    const { pattern, match } = earliestMatch;
-
-    if (pattern.type === 'link') {
-      const linkText = match[1];
-      const linkUrl = match[2];
-      parts.push(
-        <motion.a
-          key={key++}
-          href={linkUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 rounded-md border border-jarvis-accentPink/30 bg-jarvis-accentPink/15 px-2 py-0.5 text-sm font-medium text-jarvis-accentPink transition-colors hover:bg-jarvis-accentPink/25"
-          whileHover={{ scale: 1.01 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={(e) => {
-            e.stopPropagation();
-            window.open(linkUrl, '_blank');
-          }}
-        >
-          <ExternalLink size={13} />
-          {linkText}
-        </motion.a>
-      );
-    } else {
-      parts.push(
-        <span key={key++} className={pattern.className}>
-          {match[1]}
-        </span>
-      );
-    }
-
-    remaining = remaining.slice(earliestMatch.index + match[0].length);
-  }
-
-  return <>{parts}</>;
+  return <RichInline text={text} />;
 }

@@ -18,7 +18,9 @@ import {
 import { useStore } from '@/store/useStore';
 import { useChat } from '@/hooks/useApi';
 import type { Message, MessageAction, MessageActions } from '@/types';
-import { EnhancedMarkdown } from './EnhancedMarkdown';
+import { extractResponseText } from '@/lib/jarvisProtocol';
+import { JarvisMessage } from './JarvisMessage';
+import { ImageResultCard, ImageGallery, type ImageResultData } from './ImageResult';
 
 const ACTION_LABELS: Record<string, string> = {
   open_app: '🚀 Opened App',
@@ -262,6 +264,8 @@ export default function ChatPanel() {
         const decoder = new TextDecoder();
         let buffer = '', fullResponse = '', actions: MessageAction[] = [], displayIndex = 0, streamDone = false;
         let metaIntent = '', metaConfidence = 0, metaTool = '', metaVerified = false, metaMs = 0;
+        let imageResults: ImageResultData[] = [];
+        let imageGallery: { source: string; query: string; results: ImageResultData[]; count: number } | null = null;
         clearTypingInterval();
         typingIntervalRef.current = window.setInterval(() => {
           if (displayIndex < fullResponse.length) {
@@ -287,6 +291,19 @@ export default function ChatPanel() {
             try {
               const data = JSON.parse(line.slice(6));
               if (data.token) fullResponse += data.token;
+              if (data.image_result) {
+                imageResults.push(data.image_result);
+              }
+              if (data.image_gallery) {
+                imageGallery = data.image_gallery;
+              }
+              if (data.code_execution) {
+                // Code execution result — append info to response
+                const ce = data.code_execution;
+                if (!ce.success) {
+                  fullResponse += `\n\n[Code execution: ${ce.language}] ${ce.stderr || 'failed'}`;
+                }
+              }
               if (data.done) {
                 fullResponse = data.response || fullResponse;
                 actions = data.actions || [];
@@ -303,7 +320,7 @@ export default function ChatPanel() {
         const { messages } = useStore.getState();
         if (messages.length > 0) {
           const lastIndex = messages.length - 1;
-          useStore.setState({ messages: messages.map((m, i) => i === lastIndex ? { ...m, content: fullResponse, actionButtons: actions, intent: metaIntent, intent_confidence: metaConfidence, tool: metaTool, verified: metaVerified, total_ms: metaMs } : m) });
+          useStore.setState({ messages: messages.map((m, i) => i === lastIndex ? { ...m, content: fullResponse, actionButtons: actions, intent: metaIntent, intent_confidence: metaConfidence, tool: metaTool, verified: metaVerified, total_ms: metaMs, imageResults: imageResults.length > 0 ? imageResults : undefined, imageGallery: imageGallery || undefined } : m) });
         }
         if (actions.length > 0) actions.forEach(executeFrontendAction);
       }
@@ -424,7 +441,7 @@ export default function ChatPanel() {
                     isFirst={virtualRow.index === 0}
                     isLastAI={isLastAI}
                     onCopy={() => copyToClipboard(message.content)}
-                    onSpeak={() => speakText(message.content)}
+                    onSpeak={() => speakText(extractResponseText(message.content))}
                     onDelete={() => deleteMessage(message.id)}
                     chatExpandMode={chatExpandMode}
                     onCycleExpand={onCycleExpand}
@@ -666,11 +683,30 @@ const MessageBubble = React.memo(function MessageBubble({
         ) : (
           <div className="space-y-1">
             {!isUser ? (
-              <EnhancedMarkdown content={message.content} />
+              <JarvisMessage content={message.content} />
             ) : (
               <p className="text-[13px] leading-relaxed whitespace-pre-wrap">
                 {message.content}
               </p>
+            )}
+            {/* Image Gallery */}
+            {message.imageGallery && message.imageGallery.results.length > 0 && (
+              <div className="mt-2">
+                <ImageGallery
+                  source={message.imageGallery.source}
+                  query={message.imageGallery.query}
+                  results={message.imageGallery.results}
+                  count={message.imageGallery.count}
+                />
+              </div>
+            )}
+            {/* Single/Multiple Image Results */}
+            {message.imageResults && message.imageResults.length > 0 && !message.imageGallery && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {message.imageResults.map((img, idx) => (
+                  <ImageResultCard key={idx} result={img} compact={message.imageResults!.length > 1} />
+                ))}
+              </div>
             )}
             {message.actionButtons && message.actionButtons.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-1.5 pt-1.5 border-t border-white/10">

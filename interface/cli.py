@@ -1,15 +1,8 @@
 #!/usr/bin/env python3
-"""JARVIS CLI — Futuristic terminal interface.
+"""JARVIS CLI — Intelligent live-logging terminal interface.
 
-Startup:
-    +-------------------------+
-    |       JARVIS            |
-    +-------------------------+
-    1. Text Mode
-    2. Speech Mode
-    3. Debug Mode
-
-Features: Rich, prompt_toolkit, typing effect, debug overlay
+Uses TerminalRenderer for all display.  Supports both the new JarvisCore
+(event-based) and the legacy JARVIS class (token-based) backends.
 """
 
 from __future__ import annotations
@@ -18,7 +11,6 @@ import os
 import sys
 import time
 import asyncio
-import threading
 from pathlib import Path
 
 try:
@@ -29,29 +21,15 @@ except ImportError:
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-try:
-    from rich.console import Console
-    from rich.panel import Panel
-    from rich.table import Table
-    from rich.layout import Layout
-    from rich.live import Live
-    from rich.text import Text
-    from rich import box
-    RICH_AVAILABLE = True
-except ImportError:
-    RICH_AVAILABLE = False
+from interface.terminal_renderer import renderer, LogLevel
 
 try:
     from prompt_toolkit import PromptSession
     from prompt_toolkit.history import FileHistory
     from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
-    from prompt_toolkit.key_binding import KeyBindings
     PROMPT_AVAILABLE = True
 except ImportError:
     PROMPT_AVAILABLE = False
-
-
-console = Console() if RICH_AVAILABLE else None
 
 
 def _enable_ansi() -> None:
@@ -68,37 +46,28 @@ def _enable_ansi() -> None:
             pass
 
 
-def typing_effect(text: str, delay: float = 0.02) -> None:
-    for char in text:
-        print(char, end="", flush=True)
-        time.sleep(delay)
-    print()
-
-
-def print_banner() -> None:
-    banner = """
-  +---------------------------------------------------+
-  |                                                   |
-  |              J A R V I S                          |
-  |         CLI Terminal Interface                    |
-  |                                                   |
-  +---------------------------------------------------+
-
-  1. Text Mode
-  2. Speech Mode
-  3. Debug Mode
-  4. Exit
-"""
-    try:
-        print(banner, flush=True)
-    except Exception:
-        pass  # Ignore print errors
+# ── Log level from env / CLI flags ──────────────────────────────────
+def _resolve_log_level() -> LogLevel:
+    env = os.getenv("JARVIS_LOG_LEVEL", "").upper()
+    if env in ("QUIET", "Q"):
+        return LogLevel.QUIET
+    if env in ("VERBOSE", "V"):
+        return LogLevel.VERBOSE
+    if env in ("DEBUG", "D"):
+        return LogLevel.DEBUG
+    if "--quiet" in sys.argv:
+        return LogLevel.QUIET
+    if "--verbose" in sys.argv:
+        return LogLevel.VERBOSE
+    return LogLevel.NORMAL
 
 
 class TextMode:
-    def __init__(self, jarvis) -> None:
+    def __init__(self, jarvis, log_level: LogLevel = LogLevel.NORMAL) -> None:
         self.jarvis = jarvis
         self._running = True
+        self._log_level = log_level
+        self._is_new_core = hasattr(jarvis, "process_stream")
 
         if PROMPT_AVAILABLE:
             history_path = str(Path.home() / ".jarvis_history")
@@ -119,24 +88,133 @@ class TextMode:
             except (EOFError, KeyboardInterrupt):
                 return ""
 
-    async def _handle_streaming(self, user_input: str) -> None:
-        """Stream response token by token — thinking rendered in faded grey."""
-        print("Jarvis: ", end="", flush=True)
-        async for token in self.jarvis.handle_stream(user_input):
-            if isinstance(token, str) and token.startswith("\x00"):
-                # Thinking tokens: render faded/dim grey
-                print(f"\033[2m{token[1:]}\033[0m", end="", flush=True)
-            else:
-                print(token, end="", flush=True)
-        print()
+    async def _handle_new_core(self, user_input: str) -> None:
+        """Consume structured events from JarvisCore.process_stream()."""
+        from core.events import (
+            ThinkingEvent, PlannerEvent, MemoryEvent, ExecutionEvent,
+            VerificationEvent, FinalResponseToken, FinalResponse,
+            ImageResultEvent, ImageGalleryEvent, CodeExecutionEvent,
+        )
+
+        renderer.mark_request_start()
+        full_text = ""
+        streaming_started = False
+
+        async for event in self.jarvis.process_stream(user_input):
+            if isinstance(event, ThinkingEvent):
+                # Show a short summary, never raw reasoning
+                renderer.render_think("Processing...")
+            elif isinstance(event, PlannerEvent):
+                profile = getattr(event, "profile", "")
+                steps = getattr(event, "steps", [])
+                if profile:
+                    renderer.render_plan(f"Profile: {profile}")
+                if len(steps) > 1:
+                    renderer.render_plan(f"{len(steps)}-step plan")
+            elif isinstance(event, MemoryEvent):
+                action = getattr(event, "action", "")
+                key = getattr(event, "key", "")
+                if action == "hit" and key:
+                    renderer.render_memory(f"Recalled: {key}")
+            elif isinstance(event, ExecutionEvent):
+                renderer.mark_tool_start()
+                target = getattr(event, "target_name", "")
+                renderer.render_tool(target)
+                renderer.render_exec(f"Running {target}...")
+            elif isinstance(event, VerificationEvent):
+                renderer.mark_tool_end()
+                target = getattr(event, "target_name", "")
+                verified = getattr(event, "verified", False)
+                renderer.render_verify(
+                    f"{target}: {'verified' if verified else 'unverified'}"
+                )
+            elif isinstance(event, FinalResponseToken):
+                token = getattr(event, "token", "")
+                if not streaming_started:
+                    streaming_started = True
+                    renderer.render_user_stream_start()
+                renderer.render_token(token)
+                full_text += token
+            elif isinstance(event, ImageResultEvent):
+                title = getattr(event, "title", "")
+                url = getattr(event, "image_url", "")
+                if title:
+                    renderer.render_success(f"Image: {title}")
+                if url:
+                    renderer.render_info(f"URL: {url}")
+            elif isinstance(event, ImageGalleryEvent):
+                count = getattr(event, "count", 0)
+                query = getattr(event, "query", "")
+                renderer.render_success(f"Found {count} images for '{query}'")
+            elif isinstance(event, CodeExecutionEvent):
+                lang = getattr(event, "language", "")
+                success = getattr(event, "success", False)
+                stdout = getattr(event, "stdout", "")
+                status = "success" if success else "failed"
+                renderer.render_exec(f"Code ({lang}): {status}")
+                if stdout:
+                    renderer.render_info(stdout[:200])
+            elif isinstance(event, FinalResponse):
+                text = getattr(event, "text", "")
+                if text and not streaming_started:
+                    renderer.render_jarvis(text)
+
+        # Finalize the JARVIS panel
+        if streaming_started:
+            renderer.render_stream_end()
+        elif full_text:
+            renderer.render_jarvis(full_text)
+        else:
+            renderer.render_jarvis("(no response)")
+
+        renderer.render_final_performance()
+
+    async def _handle_legacy(self, user_input: str) -> None:
+        """Consume raw tokens from legacy JARVIS.handle_stream()."""
+        renderer.mark_request_start()
+        renderer.mark_llm_start()
+
+        streaming_started = False
+        full_text = ""
+
+        try:
+            async for token in self.jarvis.handle_stream(user_input):
+                if isinstance(token, str) and token.startswith("\x00"):
+                    continue  # thinking tokens — skip
+                if not streaming_started:
+                    streaming_started = True
+                    renderer.render_user_stream_start()
+                renderer.render_token(token)
+                full_text += token
+        except Exception as e:
+            renderer.render_error(f"Streaming error: {e}")
+
+        renderer.mark_llm_end()
+
+        if streaming_started:
+            renderer.render_stream_end()
+        elif full_text:
+            renderer.render_jarvis(full_text)
+        else:
+            renderer.render_jarvis("(no response)")
+
+        renderer.render_final_performance()
+
+    async def _handle_input(self, user_input: str) -> None:
+        """Route user input through the appropriate handler."""
+        renderer.render_user(user_input)
+
+        if self._is_new_core:
+            await self._handle_new_core(user_input)
+        else:
+            await self._handle_legacy(user_input)
 
     def run(self) -> None:
         os.system("cls" if os.name == "nt" else "clear")
         _enable_ansi()
-        if RICH_AVAILABLE:
-            console.print(Panel("[cyan]JARVIS Text Mode[/]", subtitle="Type 'quit' to exit"), style="bold")
-        else:
-            print("JARVIS Text Mode — Type 'quit' to exit\n")
+
+        renderer.render_info("Text mode active — Type 'quit' to exit")
+        renderer._print()
 
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -153,45 +231,49 @@ class TextMode:
                     loop.run_until_complete(self.jarvis.shutdown())
                     break
                 if cmd == "debug":
-                    if self.jarvis._debug_mode:
+                    if getattr(self.jarvis, "_debug_mode", False):
                         self.jarvis.disable_debug()
-                        if RICH_AVAILABLE:
-                            console.print("[yellow]Debug: OFF[/]")
-                        else:
-                            print("Debug mode OFF")
+                        renderer.log_level = LogLevel.DEBUG
+                        renderer.allow_debug_logs()
+                        renderer.render_info("Debug: ON")
                     else:
                         self.jarvis.enable_debug()
-                        if RICH_AVAILABLE:
-                            console.print("[yellow]Debug: ON[/]")
-                        else:
-                            print("Debug mode ON")
+                        renderer.log_level = LogLevel.DEBUG
+                        renderer.allow_debug_logs()
+                        renderer.render_info("Debug: ON")
+                    continue
+                if cmd == "quiet":
+                    renderer.log_level = LogLevel.QUIET
+                    renderer.render_info("Quiet mode")
+                    continue
+                if cmd == "verbose":
+                    renderer.log_level = LogLevel.VERBOSE
+                    renderer.render_info("Verbose mode")
+                    continue
+                if cmd == "normal":
+                    renderer.log_level = LogLevel.NORMAL
+                    renderer.suppress_noisy_logs()
+                    renderer.render_info("Normal mode")
                     continue
                 if cmd == "health":
-                    from interface.desktop import desktop
-                    if RICH_AVAILABLE:
-                        console.print(Panel(desktop.format_status(), title="System Status"))
-                    else:
-                        print(desktop.format_status())
+                    try:
+                        from interface.desktop import desktop
+                        renderer.render_info(desktop.format_status())
+                    except Exception as e:
+                        renderer.render_error(f"Health check failed: {e}")
                     continue
                 if cmd == "tools":
-                    from core.tools import tool_registry
-                    tools = tool_registry.get_all()
-                    if RICH_AVAILABLE:
-                        table = Table(title=f"Tools ({len(tools)})")
-                        table.add_column("Name", style="cyan")
-                        table.add_column("Category", style="green")
-                        table.add_column("Description")
-                        for t in tools.values():
-                            table.add_row(t["name"], t["category"].value, t["description"])
-                        console.print(table)
-                    else:
-                        print(f"Tools ({len(tools)}):")
+                    try:
+                        from core.tools import tool_registry
+                        tools = tool_registry.get_all()
+                        renderer.render_info(f"Registered tools ({len(tools)}):")
                         for name, t in tools.items():
-                            print(f"  {name:25s} [{t['category'].value}] {t['description']}")
+                            renderer.render_info(f"  {name:25s} [{t['category'].value}]")
+                    except Exception as e:
+                        renderer.render_error(f"Tool list failed: {e}")
                     continue
 
-                # Stream the response token by token
-                loop.run_until_complete(self._handle_streaming(user_input))
+                loop.run_until_complete(self._handle_input(user_input))
 
             except KeyboardInterrupt:
                 self._running = False
@@ -201,12 +283,57 @@ class TextMode:
 
 
 def boot_jarvis(debug: bool = False):
-    from interface.app import JARVIS
-    jarvis = JARVIS()
-    if debug:
-        jarvis.enable_debug()
-    jarvis.boot()
-    return jarvis
+    """Boot JARVIS and render the startup sequence."""
+    renderer.suppress_noisy_logs()
+    renderer.render_boot_banner()
+    renderer.render_info("Starting JARVIS...")
+
+    try:
+        from core.jarvis_core import JarvisCore
+        core = JarvisCore()
+        renderer.render_info("Loading core...")
+
+        # Try to get model info before boot
+        model_info = {}
+        try:
+            from core.brain_adapter import BrainAdapter
+            adapter = BrainAdapter()
+            provider = getattr(adapter, "_active_provider", "unknown")
+            model = getattr(adapter, "_model", "unknown")
+            model_info = {
+                "Model": str(model),
+                "Provider": str(provider),
+                "Mode": "Streaming",
+                "Tools": "READY",
+                "Memory": "READY",
+            }
+        except Exception:
+            model_info = {
+                "Model": "unknown",
+                "Provider": "unknown",
+                "Mode": "Streaming",
+                "Tools": "READY",
+                "Memory": "READY",
+            }
+
+        core.boot()
+        renderer.render_model_info(model_info)
+        renderer.render_ready_line()
+        return core
+
+    except Exception as e:
+        renderer.render_warn(f"Core init failed ({e}), trying legacy...")
+        try:
+            from interface.app import JARVIS
+            jarvis = JARVIS()
+            if debug:
+                jarvis.enable_debug()
+            jarvis.boot()
+            renderer.render_ready_line()
+            return jarvis
+        except Exception as e2:
+            renderer.render_error(f"Boot failed: {e2}")
+            raise
 
 
 def main() -> None:
@@ -215,31 +342,37 @@ def main() -> None:
     voice_mode = "--voice" in sys.argv
     health_only = "--health" in sys.argv
 
-    if RICH_AVAILABLE:
-        console.print("[cyan]Booting JARVIS...[/]")
-    else:
-        print("Booting JARVIS...")
+    log_level = _resolve_log_level()
+    renderer.log_level = log_level
+
+    if debug:
+        renderer.log_level = LogLevel.DEBUG
+        renderer.allow_debug_logs()
 
     jarvis = boot_jarvis(debug=debug)
 
     if health_only:
-        from interface.desktop import desktop
-        if RICH_AVAILABLE:
-            console.print(Panel(desktop.format_status(), title="System Status"))
-        else:
-            print(desktop.format_status())
+        try:
+            from interface.desktop import desktop
+            renderer.render_info(desktop.format_status())
+        except Exception as e:
+            renderer.render_error(f"Health check failed: {e}")
         return
 
-    if text_mode:
-        TextMode(jarvis).run()
+    if text_mode or voice_mode:
+        if voice_mode:
+            renderer.render_info("Voice mode — speak anytime. Ctrl+C to stop.")
+        TextMode(jarvis, log_level=log_level).run()
         return
 
-    if voice_mode:
-        print("Voice mode: Use 'python cli.py' and select option 2")
-        TextMode(jarvis).run()
-        return
+    # Interactive menu
+    renderer._print()
+    renderer.render_info("1. Text Mode")
+    renderer.render_info("2. Speech Mode")
+    renderer.render_info("3. Debug Mode")
+    renderer.render_info("4. Exit")
+    renderer._print()
 
-    print_banner()
     try:
         choice = input("  Select (1/2/3/4): ").strip()
     except (EOFError, KeyboardInterrupt):
@@ -248,26 +381,22 @@ def main() -> None:
         choice = "4"
 
     if choice == "1":
-        TextMode(jarvis).run()
+        TextMode(jarvis, log_level=log_level).run()
     elif choice == "2":
         os.system("cls" if os.name == "nt" else "clear")
-        if RICH_AVAILABLE:
-            console.print(Panel("[cyan]JARVIS Speech Mode[/]", subtitle="Say 'quit' to exit"), style="bold")
-        else:
-            print("JARVIS Speech Mode — Say 'quit' to exit\n")
+        renderer.render_info("Speech mode — say 'quit' to exit")
         try:
             from interface.speech import speech_engine
             avail = speech_engine.is_available()
             if not avail.get("stt"):
-                console.print("[red]Speech-to-text not available. Falling back to text mode.[/]")
-                TextMode(jarvis).run()
+                renderer.render_error("Speech-to-text not available. Falling back to text mode.")
+                TextMode(jarvis, log_level=log_level).run()
                 return
         except Exception:
-            console.print("[red]Speech engine unavailable. Falling back to text mode.[/]")
-            TextMode(jarvis).run()
+            renderer.render_error("Speech engine unavailable. Falling back to text mode.")
+            TextMode(jarvis, log_level=log_level).run()
             return
 
-        # Full-duplex conversation: mic always on, barge-in enabled.
         def _voice_handler(user_input: str) -> str:
             loop = asyncio.new_event_loop()
             try:
@@ -278,7 +407,6 @@ def main() -> None:
                 return result.get("response", "")
             return str(result)
 
-        console.print("[dim]Full-duplex voice mode — speak anytime. Ctrl+C to stop.[/]")
         speech_engine.run_conversation(_voice_handler)
         try:
             while True:
@@ -289,18 +417,19 @@ def main() -> None:
             speech_engine.stop()
     elif choice == "3":
         jarvis.enable_debug()
-        TextMode(jarvis).run()
+        renderer.log_level = LogLevel.DEBUG
+        renderer.allow_debug_logs()
+        TextMode(jarvis, log_level=LogLevel.DEBUG).run()
     else:
-        # Shutdown is async, run it
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
             loop.run_until_complete(jarvis.shutdown())
         except Exception as e:
-            print(f"Shutdown error: {e}")
+            renderer.render_error(f"Shutdown error: {e}")
         finally:
             loop.close()
-        print("Goodbye.")
+        renderer.render_info("Goodbye.")
 
 
 if __name__ == "__main__":

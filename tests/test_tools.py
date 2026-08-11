@@ -6,7 +6,8 @@ from core.tools import (
     open_url, web_search, search_youtube, take_screenshot,
     list_running_apps, get_active_app, create_file, read_file,
     delete_file, save_memory, recall_memory, delete_memory,
-    get_system_info, play_media, get_weather, get_joke,
+    get_system_info, get_system_stats, play_media, adjust_volume,
+    get_weather, get_joke, show_image, image_search,
     verify_process_running, verify_file_exists
 )
 
@@ -19,7 +20,7 @@ class TestToolResult:
         result = ToolResult(
             success=True,
             verified=True,
-            data={"key": "value"},
+            result={"key": "value"},
             error="",
             tool_name="test_tool",
             execution_time_ms=100.0,
@@ -28,14 +29,14 @@ class TestToolResult:
         )
         assert result.success is True
         assert result.verified is True
-        assert result.data == {"key": "value"}
+        assert result.result == {"key": "value"}
         assert result.tool_name == "test_tool"
         assert result.execution_time_ms == 100.0
     
     def test_tool_result_defaults(self):
         """Test ToolResult with defaults."""
         result = ToolResult(success=False, verified=False)
-        assert result.data is None
+        assert result.result == {}
         assert result.error == ""
         assert result.tool_name == ""
 
@@ -90,14 +91,14 @@ class TestTimeTools:
         result = get_time()
         assert result.success is True
         assert result.verified is True
-        assert "result" in result.result
+        assert "time" in result.result
     
     def test_get_date(self):
         """Test get_date tool."""
         result = get_date()
         assert result.success is True
         assert result.verified is True
-        assert "result" in result.result
+        assert "date" in result.result
 
 
 class TestCalculationTool:
@@ -134,7 +135,7 @@ class TestApplicationTools:
         result = list_running_apps()
         assert isinstance(result, ToolResult)
         if result.success:
-            assert "result" in result.result
+            assert "apps" in result.result
     
     def test_get_active_app(self):
         """Test get_active_app tool."""
@@ -236,7 +237,7 @@ class TestSystemTools:
         result = get_system_info()
         assert isinstance(result, ToolResult)
         if result.success:
-            assert "result" in result.result
+            assert "os" in result.result
     
     def test_get_system_stats(self):
         """Test get_system_stats tool."""
@@ -263,7 +264,7 @@ class TestUtilityTools:
     
     def test_get_weather(self):
         """Test get_weather tool."""
-        result = get_weather(location="London")
+        result = get_weather(city="London")
         assert isinstance(result, ToolResult)
     
     def test_get_joke(self):

@@ -44,13 +44,19 @@ class DynamicFoodEngine:
         
         intent_clean = intent.lower()
         if "code" in intent_clean or "debug" in intent_clean:
-            return self._index.get("coding.md", self._index.get("01_execution.md", ""))
+            return self._index.get("01_reasoning.md", "")
         elif "tool" in intent_clean or "open" in intent_clean:
-            return self._index.get("tools.md", self._index.get("03_tool_registry.md", ""))
+            return self._index.get("02_tools.md", "")
         elif "memory" in intent_clean:
-            return self._index.get("memory.md", self._index.get("04_memory.md", ""))
+            return self._index.get("03_memory.md", "")
         elif "desktop" in intent_clean:
-            return self._index.get("desktop.md", self._index.get("07_desktop.md", ""))
+            return self._index.get("05_desktop.md", "")
+        elif "nasa" in intent_clean or "visual" in intent_clean:
+            return self._index.get("22_nasa_visual.md", "")
+        elif "conversation" in intent_clean or "chat" in intent_clean:
+            return self._index.get("10_personality.md", "")
+        elif "writing" in intent_clean:
+            return self._index.get("19_response_style.md", "")
         
         # Default identity food
         return self._index.get("00_identity.md", "")

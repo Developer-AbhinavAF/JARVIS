@@ -1,6 +1,7 @@
 """Tests for memory functionality."""
 import pytest
 import tempfile
+from pathlib import Path
 from core.execution_first import MemoryStore, LocalNgramEmbeddings
 
 
@@ -11,7 +12,7 @@ class TestMemoryStore:
         """Test memory store initialization."""
         with tempfile.TemporaryDirectory() as tmpdir:
             memory = MemoryStore(tmpdir)
-            assert memory.root.name == tmpdir
+            assert str(memory.root) == tmpdir
             assert "facts" in memory._cache
             assert "conversation" in memory._cache
             assert "mistakes" in memory._cache

@@ -30,7 +30,7 @@ def check_tunnel_sync() -> tuple[bool, str]:
     Returns (reachable, detail). Uses urllib so it works without an event loop.
     """
     url = os.getenv("OLLAMA_BASE_URL", "https://kiersten-nonpunishable-carry.ngrok-free.dev").rstrip("/")
-    model = os.getenv("OLLAMA_MODEL", "qwen2.5:14b")
+    model = os.getenv("OLLAMA_MODEL", "jarvis-agi")
     try:
         req = urllib.request.Request(
             url + "/api/tags",
@@ -135,9 +135,9 @@ class OllamaProvider(BaseProvider):
     # Ngrok warning bypass header is required for ngrok-free endpoints
     NGROK_HEADERS = {"ngrok-skip-browser-warning": "true"}
 
-    def __init__(self, base_url: str = "https://kiersten-nonpunishable-carry.ngrok-free.dev", model: str = "qwen2.5:14b") -> None:
+    def __init__(self, base_url: str = "https://kiersten-nonpunishable-carry.ngrok-free.dev", model: str = "jarvis-agi") -> None:
         self.base_url = base_url.rstrip("/")
-        self.model = model  # QWEN2.5:14B via ngrok tunnel as primary
+        self.model = model  # JARVIS AGI via ngrok tunnel as primary
         if httpx is None:
             raise RuntimeError("httpx is required for network-backed providers")
         self._client = httpx.AsyncClient(timeout=120.0, verify=False, headers=self.NGROK_HEADERS)
@@ -226,8 +226,8 @@ class AIRouter:
         self._init_providers()
 
     def _init_providers(self) -> None:
-        # Initialize Ollama FIRST as primary (QWEN2.5:14B via ngrok tunnel)
-        ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5:14b")
+        # Initialize Ollama FIRST as primary (JARVIS AGI via ngrok tunnel)
+        ollama_model = os.getenv("OLLAMA_MODEL", "jarvis-agi")
         ollama_url = os.getenv("OLLAMA_BASE_URL", "https://kiersten-nonpunishable-carry.ngrok-free.dev")
         self._ollama = OllamaProvider(base_url=ollama_url, model=ollama_model)
         

@@ -111,7 +111,6 @@ function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: b
 export default function SettingsSection() {
   const [activeTab, setActiveTab] = useState('general');
   const [saved, setSaved] = useState(false);
-  const [loading, setLoading] = useState(true);
 
   // Settings state
   const [settings, setSettings] = useState({
@@ -149,7 +148,7 @@ export default function SettingsSection() {
           setSettings(prev => ({
             ...prev,
             voiceMode: data.settings.auto_speak ?? prev.voiceMode,
-            darkMode: data.settings.theme === 'dark' ?? prev.darkMode,
+            darkMode: data.settings.theme === 'dark' ? true : prev.darkMode,
             notifications: data.settings.developer_mode ? false : prev.notifications,
             highPerformance: data.settings.performance_mode === 'performance',
             autoCorrection: data.settings.auto_fallback ?? prev.autoCorrection,
@@ -158,8 +157,6 @@ export default function SettingsSection() {
         }
       } catch (e) {
         console.warn('Failed to load settings from backend:', e);
-      } finally {
-        setLoading(false);
       }
     };
     loadSettings();

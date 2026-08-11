@@ -134,3 +134,69 @@ class FinalResponse(BaseEvent):
 
     def __post_init__(self):
         self.event_type = "final_response"
+
+
+@dataclass
+class ToolCandidateEvent(BaseEvent):
+    """Emitted when candidate tools are identified for a query."""
+    candidates: list = field(default_factory=list)
+    query: str = ""
+
+    def __post_init__(self):
+        self.event_type = "tool_candidates"
+
+
+@dataclass
+class ImageResultEvent(BaseEvent):
+    """Emitted when a visual result (image/video) is retrieved and should be rendered."""
+    source: str = ""
+    title: str = ""
+    description: str = ""
+    image_url: str = ""
+    thumbnail_url: str = ""
+    local_path: str = ""
+    source_url: str = ""
+    media_type: str = "image"
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        self.event_type = "image_result"
+
+
+@dataclass
+class ImageGalleryEvent(BaseEvent):
+    """Emitted when multiple image results are returned (e.g. NASA search)."""
+    source: str = ""
+    query: str = ""
+    results: list = field(default_factory=list)
+    count: int = 0
+
+    def __post_init__(self):
+        self.event_type = "image_gallery"
+
+
+@dataclass
+class FileResultEvent(BaseEvent):
+    """Emitted when a file operation produces a result."""
+    file_path: str = ""
+    operation: str = ""
+    success: bool = True
+    details: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        self.event_type = "file_result"
+
+
+@dataclass
+class CodeExecutionEvent(BaseEvent):
+    """Emitted when code is generated and executed as a fallback."""
+    language: str = ""
+    code: str = ""
+    stdout: str = ""
+    stderr: str = ""
+    exit_code: int = -1
+    success: bool = False
+    verification: str = ""
+
+    def __post_init__(self):
+        self.event_type = "code_execution"

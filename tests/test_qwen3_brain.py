@@ -14,7 +14,7 @@ class TestBrainResponse:
             thinking="Test thinking",
             success=True,
             provider="ollama",
-            model="qwen3",
+            model="jarvis-agi",
             latency_ms=100.0,
             tokens_generated=50
         )
@@ -22,7 +22,7 @@ class TestBrainResponse:
         assert response.thinking == "Test thinking"
         assert response.success is True
         assert response.provider == "ollama"
-        assert response.model == "qwen3"
+        assert response.model == "jarvis-agi"
         assert response.latency_ms == 100.0
         assert response.tokens_generated == 50
     
@@ -49,11 +49,14 @@ class TestQWEN3Brain:
         assert brain._system_prompt is not None
     
     def test_build_system_prompt(self):
-        """Test system prompt building."""
+        """Test system prompt building — must be minimal, not the legacy
+        master prompt (JARVIS AGI has behavior embedded)."""
         brain = QWEN3Brain()
         prompt = brain._build_system_prompt()
         assert len(prompt) > 0
-        assert "JARVIS" in prompt
+        assert len(prompt) < 600
+        assert "master_system_prompt" not in prompt.lower()
+        assert "You are JARVIS" not in prompt
     
     def test_load_personality(self):
         """Test personality loading."""
@@ -97,20 +100,19 @@ class TestQWEN3BrainIntegration:
         # Should not raise errors
     
     def test_system_prompt_structure(self):
-        """Test system prompt has required sections."""
+        """Test system prompt is the compact tool-protocol note only."""
         brain = QWEN3Brain()
         prompt = brain._build_system_prompt()
-        
-        required_sections = [
-            "JARVIS", "Personality", "Rules", "Memory",
-            "Context", "Tools", "Reasoning"
-        ]
-        
-        for section in required_sections:
-            # Check for at least partial presence
-            assert section.lower() in prompt.lower() or any(
-                word in prompt.lower() for word in section.lower().split()
-            )
+
+        # No legacy sections may be injected at runtime.
+        for forbidden in (
+            "MASTER", "OPERATING DOCUMENTATION", "AVAILABLE TOOLS",
+            "You are JARVIS", "personality", "Core Directives",
+        ):
+            assert forbidden.lower() not in prompt.lower()
+
+        # Tool protocol is kept (legacy text-tool path parses it).
+        assert '"tool"' in prompt
 
 
 if __name__ == "__main__":

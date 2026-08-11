@@ -96,8 +96,8 @@ class TestToolConfirmation:
         safe_tool = registry.get("safe")
         dangerous_tool = registry.get("dangerous")
         
-        assert safe_tool["requires_confirmation"] is False
-        assert dangerous_tool["requires_confirmation"] is True
+        assert safe_tool.requires_confirmation is False
+        assert dangerous_tool.requires_confirmation is True
 
 
 class TestSecurityValidation:

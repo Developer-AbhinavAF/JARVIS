@@ -86,46 +86,13 @@ class Brain:
     )
 
     def _build_system_prompt(self) -> str:
-        """Build system prompt from master prompt file based on personality."""
-        style = self._personality.get("style", "concise")
-        formality = self._personality.get("formality", "professional")
-        
-        master_prompt = ""
-        for candidate in self.MASTER_PROMPT_PATHS:
-            try:
-                with open(candidate, encoding="utf-8") as f:
-                    master_prompt = f.read().strip()
-                if master_prompt:
-                    break
-            except OSError:
-                continue
-        if not master_prompt:
-            logger.warning("master_system_prompt.md not found, using fallback prompt")
-        
-        if master_prompt:
-            return master_prompt + (
-                f"\n\n---\n"
-                f"Execution-first directives apply. Creator: {CREATOR}.\n"
-                f"Communication style: {style}\n"
-                f"Formality level: {formality}\n"
-                f"Think silently. Never include reasoning or think tags in your reply."
-            )
-        
-        prompt_parts = [
-            f"You are JARVIS, an execution-first AI operating system created by {CREATOR}.",
-            "",
-            "Execution > Planning > Conversation.",
-            "If a tool exists, use it. Never simulate or pretend an action happened.",
-            "",
-            f"Communication style: {style}",
-            f"Formality level: {formality}",
-            "",
-            "Open apps and websites, search, play media, run system tasks.",
-            "Only use conversation as the fallback when no tool matches.",
-            "Never reveal internal reasoning."
-        ]
-        
-        return "\n".join(prompt_parts)
+        """Build system prompt.
+
+        JARVIS AGI is a fine-tuned model with behavior, personality and
+        tool-selection rules embedded — the legacy master system prompt is
+        NOT injected at runtime to avoid duplicating identity/instructions.
+        """
+        return ""
     
     def _update_personality(self, trait: str, value: str) -> None:
         """Update personality trait."""

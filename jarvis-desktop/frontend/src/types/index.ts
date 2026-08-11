@@ -36,6 +36,30 @@ export interface Message {
   tool?: string;
   verified?: boolean;
   total_ms?: number;
+  imageResults?: Array<{
+    source: string;
+    title: string;
+    description: string;
+    image_url: string;
+    thumbnail_url: string;
+    source_url: string;
+    media_type: string;
+    metadata?: Record<string, any>;
+  }>;
+  imageGallery?: {
+    source: string;
+    query: string;
+    results: Array<{
+      source: string;
+      title: string;
+      description: string;
+      image_url: string;
+      thumbnail_url: string;
+      source_url: string;
+      media_type: string;
+    }>;
+    count: number;
+  };
 }
 
 export interface SystemStats {

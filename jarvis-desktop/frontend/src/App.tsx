@@ -20,6 +20,7 @@ import { useStore } from '@/store/useStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { useChatShortcuts } from '@/hooks/useChatShortcuts';
+import { extractResponseText } from '@/lib/jarvisProtocol';
 import { Mic, MicOff, Send } from 'lucide-react';
 
 function App() {
@@ -124,8 +125,8 @@ function App() {
       
       // In speech mode, speak the response
       if (currentMode === 'speech') {
-        // Clean up the response text for better speech (remove markdown, emojis, system stats)
-        let cleanText = data.response
+        // Clean up the response text for better speech (remove tags and markdown)
+        let cleanText = extractResponseText(data.response)
           .replace(/\*\*/g, '')  // Remove bold
           .replace(/\*/g, '')   // Remove italic
           .replace(/🚀|📊|🔍|💡|⚠️|✅|❌|🎤|🤖|🧮|🌤️|😄|💫|📡|⚙️|🤔|⬜|✅|🖥️|⚡|🔍|🧰|📝|ℹ️|🎮|🔇|🔊|🔉|▶️|⏭️|⏮️|🔄|💤|🔒|📶|🔵|🗑️|💻/g, '') // Remove all emojis

@@ -8,5 +8,35 @@
     "trigger_tool": "youtube_search",
     "rule": "Avoid UnifiedToolRegistry._handle_youtube_search() got an unexpected keyword argument 'app_name' when invoking youtube_search",
     "learned_at": 1785939421.6032388
+  },
+  {
+    "trigger_tool": "open_application",
+    "rule": "Avoid Tool 'open_application' timed out after 30.0s when invoking open_application",
+    "learned_at": 1786202787.5946262
+  },
+  {
+    "trigger_tool": "open_application",
+    "rule": "Avoid Tool 'open_application' timed out after 30.0s when invoking open_application",
+    "learned_at": 1786202787.5946262
+  },
+  {
+    "trigger_tool": "open_application",
+    "rule": "Avoid Tool 'open_application' timed out after 30.0s when invoking open_application",
+    "learned_at": 1786210065.9529042
+  },
+  {
+    "trigger_tool": "open_application",
+    "rule": "Avoid Tool 'open_application' timed out after 30.0s when invoking open_application",
+    "learned_at": 1786210065.9529042
+  },
+  {
+    "trigger_tool": "open_application",
+    "rule": "Avoid Tool 'open_application' timed out after 30.0s when invoking open_application",
+    "learned_at": 1786210065.9529042
+  },
+  {
+    "trigger_tool": "open_application",
+    "rule": "Avoid Tool 'open_application' timed out after 30.0s when invoking open_application",
+    "learned_at": 1786210065.9529042
   }
 ]

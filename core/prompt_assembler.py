@@ -46,40 +46,44 @@ class PromptAssembler:
         history: List[Dict[str, str]] = None,
         tool_cards: List[Dict[str, Any]] = None,
     ) -> AssembledPrompt:
-        """Build context-aware message list adhering to token budget."""
+        """Build context-aware message list adhering to token budget.
+
+        JARVIS AGI already contains identity, behavior, tool-selection and
+        execution rules — the legacy identity/food/tool-card system prompt is
+        NOT injected. Only live dynamic context (world state) is attached.
+        """
         messages = []
 
-        # 1. System Prompt & Identity Food (~500 tokens)
-        food_text = food_engine.get_food_for_intent(plan.profile)
-        system_content = (
-            "You are JARVIS, an execution-first local AI Operating System created by Abhinav.\n"
-            "Execution > Planning > Conversation. If a tool exists, use it. Never simulate an action.\n"
-            "Never reveal internal reasoning. Only output a tool call or a final response.\n"
-            "Respond naturally, concisely, and directly. Never invent tools.\n\n"
-            f"--- Core Directives ---\n{food_text[:1200]}\n"
-        )
-        
-        # 2. Add World State Context (~150 tokens)
+        # 1. Minimal system context — no identity duplication, no instruction
+        #    prompts, no natural-language tool contract dump (tools are sent
+        #    as structured schemas by the brain when the API supports them).
+        system_content = ""
         state_summary = world_state_engine.get_context_summary()
-        system_content += f"\n--- World State ---\n{state_summary}\n"
-
-        # 3. Add Candidate Tool Cards if present (~400 tokens)
-        if tool_cards:
-            system_content += "\n--- Available Tools ---\n"
-            for card in tool_cards[:3]:
-                system_content += (
-                    f"Tool: {card.get('name')}\n"
-                    f"Description: {card.get('description')}\n"
-                    f"Args: {card.get('arguments')}\n\n"
-                )
+        if state_summary:
+            system_content += f"--- World State ---\n{state_summary}\n"
 
         messages.append({"role": "system", "content": system_content})
 
-        # 4. Add Memory Context if needed (~250 tokens)
+        # 4. Add Memory Context if needed (~250 tokens, just-in-time)
+        #    Only relevant retrieved memories are injected — never the
+        #    whole store.
         if plan.requires_memory:
-            mem_summary = unified_memory.get_memory_summary()
-            if mem_summary:
-                messages.append({"role": "system", "content": f"--- Retained Memory ---\n{mem_summary}"})
+            mem_entries = unified_memory.retrieve(query, top_k=5)
+            mem_block = unified_memory.format_memories(mem_entries)
+            if mem_block:
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        "--- Retained Memory ---\n"
+                        f"{mem_block}\n\n"
+                        "Use only the memories listed above to ground your "
+                        "answer. If the user asked you to remember "
+                        "something, confirm the save only if the matching "
+                        "entry is listed above; otherwise say you couldn't "
+                        "save it. If no memory matches the user's question, "
+                        "say you don't have that stored."
+                    ),
+                })
 
         # 5. Add RAG Context if required (~800 tokens)
         if plan.requires_rag and plan.top_k_rag > 0:

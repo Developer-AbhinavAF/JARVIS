@@ -134,49 +134,22 @@ class QWEN3Brain:
             return "No tools registered."
 
     def _build_system_prompt(self) -> str:
-        """Build system prompt: master rules + full docs + all tool contracts."""
-        root = os.path.dirname(os.path.dirname(__file__))
-        master_prompt = ""
-        for candidate in (
-            os.path.join(root, "master_system_prompt.md"),
-            os.path.join(root, "docs", "master_system_prompt.md"),
-        ):
-            try:
-                with open(candidate, encoding="utf-8") as f:
-                    master_prompt = f.read().strip()
-                if master_prompt:
-                    logger.info("Loaded master system prompt from %s", candidate)
-                    break
-            except OSError:
-                continue
+        """Build system prompt.
 
-        if master_prompt:
-            docs = self._load_docs()
-            tools = self._load_tools()
-            return (
-                master_prompt
-                + "\n\n=== OPERATING DOCUMENTATION AND RULES ===\n" + docs
-                + "\n\n=== AVAILABLE TOOLS ===\n" + tools
-                + "\n\n=== TOOL CALL FORMAT ===\n"
-                + "To call a tool, think about which tool fits, then end your reply with a JSON block:\n"
-                + '{"tool":"tool_name","params":{"arg":"value"}}\n'
-                + "Only include the JSON block when a tool call is needed. Never invent tools."
-            )
-        
-        prompt_parts = [
-            "You are JARVIS, an execution-first AI operating system created by Abhinav.",
-            "",
-            "Execution > Planning > Conversation.",
-            "If a tool exists, use it. Never simulate or pretend an action happened.",
-            "",
-            "Think silently. Never include reasoning, meta-commentary, or think tags in your reply.",
-            "For simple requests (greetings, quick facts), answer immediately without lengthy reasoning.",
-            "",
-            "Open apps and websites, search, play media, run system tasks.",
-            "Only use conversation as the fallback when no tool matches.",
-            "To call a tool, end your reply with a JSON block: {\"tool\":\"name\",\"params\":{...}}"
-        ]
-        return "\n".join(prompt_parts)
+        JARVIS AGI is a fine-tuned model with behavior, personality and tool-
+        selection rules embedded. The legacy master prompt / docs / tool
+        contract dump are not injected at runtime (they would duplicate the
+        model's learned behavior). Only the legacy text-tool protocol line is
+        kept because this brain path delivers tool calls as JSON text that the
+        legacy interface parses.
+        """
+        return (
+            "Respond naturally and directly.\n"
+            "To call a tool, think about which tool fits, then end your reply "
+            'with a JSON block: {"tool":"tool_name","params":{"arg":"value"}}\n'
+            "Only include the JSON block when a tool call is needed. Never "
+            "invent tools."
+        )
     
     def _update_context(self, user_input: str) -> None:
         """Update context engine with user input.

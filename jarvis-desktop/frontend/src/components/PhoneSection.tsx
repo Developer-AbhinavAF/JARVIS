@@ -2,16 +2,11 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Phone,
-  PhoneOff,
   PhoneCall,
-  Mic,
-  MicOff,
-  Volume2,
   Activity,
   Clock,
   User,
   Zap,
-  Loader2,
 } from 'lucide-react';
 
 interface CallState {

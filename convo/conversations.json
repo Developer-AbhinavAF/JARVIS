@@ -374,5 +374,485 @@
     "provider": "",
     "model": "",
     "tier": "gpu"
+  },
+  {
+    "timestamp": 1786198066.87,
+    "user": "hello",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786198067.59,
+    "user": "hello",
+    "assistant": "Hello! How can I assist you today?",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786198073.67,
+    "user": "open youtube",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786198107.86,
+    "user": "hello",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786198108.93,
+    "user": "hello",
+    "assistant": "\nOpened www.youtube.com.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786198114.12,
+    "user": "open youtube",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786198144.43,
+    "user": "hello",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786198145.4,
+    "user": "hello",
+    "assistant": "Hello! How can I assist you today? \nOpened www.youtube.com.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786198151.82,
+    "user": "open youtube",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786199341.63,
+    "user": "hello",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786199342.66,
+    "user": "hello",
+    "assistant": "\nOpened www.youtube.com.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786199349.73,
+    "user": "open youtube",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786263990.82,
+    "user": "hello",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786263992.17,
+    "user": "hello",
+    "assistant": "Hello! How can I assist you today?\nOpened www.youtube.com.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786263997.91,
+    "user": "open youtube",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786264053.76,
+    "user": "hello",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786264054.79,
+    "user": "hello",
+    "assistant": "\nOpened www.youtube.com.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786264061.1,
+    "user": "open youtube",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786264136.66,
+    "user": "hello",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786264137.36,
+    "user": "hello",
+    "assistant": "Opened www.youtube.com.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786264142.96,
+    "user": "open youtube",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786267821.57,
+    "user": "hello",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786267823.37,
+    "user": "hello",
+    "assistant": "\nOpened www.youtube.com.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786267831.56,
+    "user": "open youtube",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786267895.0,
+    "user": "hello",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786267896.11,
+    "user": "hello",
+    "assistant": "\nOpened www.youtube.com.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786267902.57,
+    "user": "open youtube",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786268020.06,
+    "user": "hello",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786268021.12,
+    "user": "hello",
+    "assistant": "\nOpened www.youtube.com.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786268026.79,
+    "user": "open youtube",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786268158.65,
+    "user": "hello",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786268159.85,
+    "user": "hello",
+    "assistant": "\nOpened www.youtube.com.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786268165.41,
+    "user": "open youtube",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786269144.51,
+    "user": "hello",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786269145.64,
+    "user": "hello",
+    "assistant": "\nOpened www.youtube.com.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786269151.51,
+    "user": "open youtube",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786269173.82,
+    "user": "hello",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786269174.77,
+    "user": "hello",
+    "assistant": "\nOpened www.youtube.com.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786269180.4,
+    "user": "open youtube",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786269252.97,
+    "user": "hello",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786269254.01,
+    "user": "hello",
+    "assistant": "\nOpened www.youtube.com.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786269259.81,
+    "user": "open youtube",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786269427.04,
+    "user": "hello",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786269428.28,
+    "user": "hello",
+    "assistant": "\nOpened www.youtube.com.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786269433.76,
+    "user": "open youtube",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786280559.23,
+    "user": "hello",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786280559.79,
+    "user": "hello",
+    "assistant": "To open YouTube, you can use the web browser tool. ",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786280564.33,
+    "user": "open youtube",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786280737.36,
+    "user": "hello",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786280737.95,
+    "user": "hello",
+    "assistant": "You can open YouTube by using a web browser. ",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786280742.28,
+    "user": "open youtube",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786290013.88,
+    "user": "hello",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786290014.46,
+    "user": "hello",
+    "assistant": "You can open YouTube by using a web browser. ",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786290018.58,
+    "user": "open youtube",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786290211.89,
+    "user": "hello",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786290212.62,
+    "user": "hello",
+    "assistant": "You can open YouTube by using a web browser. ",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786290217.59,
+    "user": "open youtube",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786297460.87,
+    "user": "hello",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786297461.43,
+    "user": "hello",
+    "assistant": "You can open YouTube by using a web browser. ",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786297467.21,
+    "user": "open youtube",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
   }
 ]

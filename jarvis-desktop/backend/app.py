@@ -83,23 +83,15 @@ logging.getLogger().addHandler(_frontend_handler)
 def get_desktop_food() -> str:
     """Return a short string of desktop-UI context prepended to user messages.
 
-    Currently returns a minimal header so the chat handler can always inject
-    context. Extend this to surface real UI state (active panel, recent logs,
-    system stats summary) when those subsystems expose it.
+    NOTE: System resource values (CPU/RAM/GPU) are intentionally NOT included.
+    The LLM must never shape or refuse responses based on machine load — the
+    resource monitor is an independent subsystem surfaced through the
+    dashboard / /api/system-stats only.
     """
-    try:
-        stats = get_system_stats()
-        cpu = stats.get("cpu", {}).get("usage", 0)
-        mem_pct = stats.get("memory", {}).get("percentage", 0)
-        return (
-            "[Desktop UI Context]\n"
-            f"channel: jarvis-desktop\n"
-            f"cpu_percent: {cpu}\n"
-            f"memory_percent: {mem_pct}\n"
-        )
-    except Exception as exc:  # never let food gathering break chat
-        logger.debug("get_desktop_food fallback: %s", exc)
-        return "[Desktop UI Context]\nchannel: jarvis-desktop\n"
+    return (
+        "[Desktop UI Context]\n"
+        f"channel: jarvis-desktop\n"
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -118,7 +110,7 @@ def _get_boot_lock() -> asyncio.Lock:
     return _boot_lock
 
 
-# Configurable timeouts — Ollama's first response after boot (loading qwen2.5:14b
+# Configurable timeouts — Ollama's first response after boot (loading jarvis-agi
 # on the cloud GPU + ngrok round-trip) can take a long time. Generous defaults
 # to keep the UI from looking hung while the model is warming up. Overridable
 # via environment variables.
@@ -204,21 +196,8 @@ def get_system_stats() -> dict[str, Any]:
     _prev_net = net
     _prev_net_time = now
 
-    # Ping (simple localhost check)
+    # Ping (simple, non-blocking)
     ping_ms = 0
-    try:
-        import subprocess
-        result = subprocess.run(
-            ["ping", "-n", "1", "8.8.8.8"],
-            capture_output=True, text=True, timeout=2
-        )
-        for line in result.stdout.split("\n"):
-            if "time=" in line.lower():
-                ping_str = line.lower().split("time=")[1].split("ms")[0].strip()
-                ping_ms = float(ping_str)
-                break
-    except Exception:
-        pass
 
     processes = len(psutil.pids())
 
@@ -286,6 +265,22 @@ def build_actions(result: dict) -> list[dict[str, Any]]:
     elif tool == "list_running_apps":
         apps = data.get("apps", [])
         actions.append({"type": "running_apps", "apps": apps[:10]})
+    elif tool in ("nasa_apod", "nasa_image_search"):
+        results = data.get("results", [])
+        if results:
+            for r in results[:6]:
+                actions.append({
+                    "type": "image_result",
+                    "source": "NASA",
+                    "title": r.get("title", ""),
+                    "image_url": r.get("image_url", ""),
+                    "thumbnail_url": r.get("thumbnail_url", ""),
+                    "description": r.get("description", "")[:200],
+                    "source_url": r.get("source_url", ""),
+                    "media_type": r.get("media_type", "image"),
+                })
+    elif tool == "code_fallback":
+        actions.append({"type": "code_execution", "language": data.get("language", ""), "success": data.get("success", False)})
 
     return actions
 
@@ -367,7 +362,7 @@ async def chat(request: Request):
             session_id = json_data.get("session_id", "default")
             stream_mode = bool(json_data.get("stream", False))
 
-        logger.info("Chat: %s (stream=%s)", message[:80], stream_mode)
+        logger.info("USER: %s", message)
 
         # Inject desktop UI food into message
         try:
@@ -416,7 +411,10 @@ async def chat(request: Request):
                                         full_text += token
                                         yield ("token", token)
                                 elif etype == "final_response":
-                                    full_text = getattr(event, "text", full_text) or full_text
+                                    resp_text = getattr(event, "text", "") or ""
+                                    if resp_text and resp_text != full_text:
+                                        full_text = resp_text
+                                        yield ("token", resp_text)
                                 elif etype == "planner":
                                     intent = getattr(event, "goal", "") or intent
                                     intent_confidence = getattr(event, "confidence", 0.0) or intent_confidence
@@ -425,6 +423,35 @@ async def chat(request: Request):
                                 elif etype == "verification":
                                     verified = getattr(event, "verified", False)
                                     meta = getattr(event, "details", {}) or meta
+                                elif etype == "image_result":
+                                    img_data = {
+                                        "source": getattr(event, "source", ""),
+                                        "title": getattr(event, "title", ""),
+                                        "description": getattr(event, "description", ""),
+                                        "image_url": getattr(event, "image_url", ""),
+                                        "thumbnail_url": getattr(event, "thumbnail_url", ""),
+                                        "source_url": getattr(event, "source_url", ""),
+                                        "media_type": getattr(event, "media_type", "image"),
+                                        "metadata": getattr(event, "metadata", {}),
+                                    }
+                                    yield ("image_result", img_data)
+                                elif etype == "image_gallery":
+                                    gallery_data = {
+                                        "source": getattr(event, "source", ""),
+                                        "query": getattr(event, "query", ""),
+                                        "results": getattr(event, "results", []),
+                                        "count": getattr(event, "count", 0),
+                                    }
+                                    yield ("image_gallery", gallery_data)
+                                elif etype == "code_execution":
+                                    code_data = {
+                                        "language": getattr(event, "language", ""),
+                                        "success": getattr(event, "success", False),
+                                        "stdout": getattr(event, "stdout", ""),
+                                        "stderr": getattr(event, "stderr", ""),
+                                        "exit_code": getattr(event, "exit_code", -1),
+                                    }
+                                    yield ("code_execution", code_data)
                         else:
                             result = await jarvis.handle(augmented_message)
                             full_text = result.get("response", "")
@@ -447,6 +474,12 @@ async def chat(request: Request):
                                 break
                             if kind == "token":
                                 yield f"data: {json.dumps({'token': payload})}\n\n"
+                            elif kind == "image_result":
+                                yield f"data: {json.dumps({'image_result': payload})}\n\n"
+                            elif kind == "image_gallery":
+                                yield f"data: {json.dumps({'image_gallery': payload})}\n\n"
+                            elif kind == "code_execution":
+                                yield f"data: {json.dumps({'code_execution': payload})}\n\n"
                     except asyncio.TimeoutError:
                         logger.warning(
                             "Stream exceeded %.0fs without producing another token "
@@ -473,6 +506,7 @@ async def chat(request: Request):
 
                     actions = build_actions({"tool": tool, "result": meta if isinstance(meta, dict) else {}})
                     total_ms = int((time.time() - stream_start) * 1000)
+                    logger.info("JARVIS stream (%sms%s): %s", total_ms, f" tool={tool}" if tool else "", full_text[:200])
                     yield f"data: {json.dumps({'done': True, 'response': full_text, 'actions': actions, 'intent': intent, 'intent_confidence': intent_confidence, 'tool': tool, 'verified': verified, 'total_ms': total_ms})}\n\n"
                 except asyncio.CancelledError:
                     raise
@@ -511,9 +545,13 @@ async def chat(request: Request):
                 "result": {},
             }
         actions = build_actions(result)
+        ai_response = result.get("response", "")
+        total_ms = result.get("total_ms", 0)
+        tool = result.get("tool", "")
+        logger.info("JARVIS (%sms%s): %s", total_ms, f" tool={tool}" if tool else "", ai_response[:200])
 
         return {
-            "response": result.get("response", ""),
+            "response": ai_response,
             "session_id": session_id,
             "timestamp": datetime.now().isoformat(),
             "actions": actions if actions else None,
@@ -811,7 +849,7 @@ if __name__ == "__main__":
         port=8001,
         reload=False,
         # Long keep-alive so the SSE stream doesn't get killed mid-response
-        # while the cloud GPU is generating qwen2.5:14b tokens.
+        # while the cloud GPU is generating jarvis-agi tokens.
         timeout_keep_alive=180,
         # Don't let uvicorn kill long-running handlers mid-stream.
         h11_max_incomplete_event_size=None,

@@ -1,0 +1,27 @@
+[
+  {
+    "trigger_tool": "open_application",
+    "rule": "Avoid Tool 'open_application' timed out after 30.0s when invoking open_application",
+    "learned_at": 1786207059.269244
+  },
+  {
+    "trigger_tool": "open_application",
+    "rule": "Avoid Tool 'open_application' timed out after 30.0s when invoking open_application",
+    "learned_at": 1786211338.2793431
+  },
+  {
+    "trigger_tool": "open_application",
+    "rule": "Avoid Tool 'open_application' timed out after 30.0s when invoking open_application",
+    "learned_at": 1786211621.5033555
+  },
+  {
+    "trigger_tool": "nasa_image_search",
+    "rule": "Avoid Tool 'nasa_image_search' timed out after 30.0s when invoking nasa_image_search",
+    "learned_at": 1786256466.052266
+  },
+  {
+    "trigger_tool": "open_application",
+    "rule": "Avoid Application 'chrome' was not found. when invoking open_application",
+    "learned_at": 1786256466.052266
+  }
+]
