@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 from core.world_state import world_state_engine
 from core.memory import unified_memory
+from core.memory_human import human_memory
 from core.rag import rag_engine
 from core.foods import food_engine
 from core.planner import ExecutionPlan
@@ -65,24 +66,33 @@ class PromptAssembler:
         messages.append({"role": "system", "content": system_content})
 
         # 4. Add Memory Context if needed (~250 tokens, just-in-time)
-        #    Only relevant retrieved memories are injected — never the
-        #    whole store.
+        #    Priority: human-like memory (Drive-backed) first, then legacy unified_memory
         if plan.requires_memory:
-            mem_entries = unified_memory.retrieve(query, top_k=5)
-            mem_block = unified_memory.format_memories(mem_entries)
+            mem_block = ""
+            
+            # Try human-like memory first (Google Drive backed, ranked, bounded)
+            if human_memory.is_started():
+                mem_block = human_memory.context_for(query, budget_tokens=4000)
+            
+            # Fallback to legacy unified_memory if human memory not available
+            if not mem_block:
+                mem_entries = unified_memory.retrieve(query, top_k=5)
+                mem_block = unified_memory.format_memories(mem_entries)
+                if mem_block:
+                    mem_block = f"--- Retained Memory ---\n{mem_block}\n\n"
+            
             if mem_block:
+                instruction = (
+                    "Use only the memories listed above to ground your "
+                    "answer. If the user asked you to remember "
+                    "something, confirm the save only if the matching "
+                    "entry is listed above; otherwise say you couldn't "
+                    "save it. If no memory matches the user's question, "
+                    "say you don't have that stored."
+                )
                 messages.append({
                     "role": "system",
-                    "content": (
-                        "--- Retained Memory ---\n"
-                        f"{mem_block}\n\n"
-                        "Use only the memories listed above to ground your "
-                        "answer. If the user asked you to remember "
-                        "something, confirm the save only if the matching "
-                        "entry is listed above; otherwise say you couldn't "
-                        "save it. If no memory matches the user's question, "
-                        "say you don't have that stored."
-                    ),
+                    "content": f"{mem_block}{instruction}",
                 })
 
         # 5. Add RAG Context if required (~800 tokens)

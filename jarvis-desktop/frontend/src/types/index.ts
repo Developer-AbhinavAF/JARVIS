@@ -36,6 +36,11 @@ export interface Message {
   tool?: string;
   verified?: boolean;
   total_ms?: number;
+  imageAttachment?: {
+    data: string;
+    type: string;
+    name: string;
+  };
   imageResults?: Array<{
     source: string;
     title: string;

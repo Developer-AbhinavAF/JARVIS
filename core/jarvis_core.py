@@ -39,6 +39,7 @@ from core.toolcall_parser import tool_call_parser
 from core.thinking_middleware import ThinkingMiddleware
 from core.world_state import world_state_engine
 from core.memory import unified_memory, extract_memory_intent
+from core.memory_human import human_memory
 from core.knowledge_graph import knowledge_graph
 from core.goal_manager import goal_manager
 from core.skill_manager import skill_manager
@@ -62,6 +63,7 @@ class JarvisCore:
         self.brain_adapter = BrainAdapter()
         self.thinking_middleware = ThinkingMiddleware()
         self._booted = False
+        self._human_memory_started = False
 
     @staticmethod
     def _chunk_text(text: str, size: int = 4) -> list[str]:
@@ -198,9 +200,20 @@ class JarvisCore:
 
         logger.info("Booting JARVIS vNext++ Core...")
         health = self_diagnostics.run_diagnostics()
+        
+        # Start human-like memory system
+        if not self._human_memory_started:
+            memory_startup = human_memory.startup()
+            self._human_memory_started = memory_startup.get("started", False)
+            logger.info(
+                "Human memory system: drive_ready=%s, pending_sync=%d",
+                memory_startup.get("drive_ready"),
+                memory_startup.get("pending_sync", 0),
+            )
+        
         background_workers.submit_task(self._async_warmup_runner)
         self._booted = True
-        return {"status": "booted", "health": health}
+        return {"status": "booted", "health": health, "memory": memory_startup}
 
     def _async_warmup_runner(self) -> None:
         loop = asyncio.new_event_loop()
@@ -227,8 +240,27 @@ class JarvisCore:
         # 1-5. Intent, Context, World State
         logger.info("[USER] %s", user_input)
         world_state_engine.update(last_user_request=user_input)
+        
+        # Track user message in human memory
+        if self._human_memory_started:
+            human_memory.on_user_message(user_input)
 
-        # 6. Memory Lookup
+        # 5.5. Handle explicit memory commands (deterministic routing)
+        if self._human_memory_started:
+            memory_command = human_memory.route_command(user_input)
+            if memory_command:
+                logger.info(
+                    "[MEMORY_COMMAND] kind=%s success=%s",
+                    memory_command.get("kind"),
+                    memory_command.get("success"),
+                )
+                response_text = memory_command.get("text", "")
+                for token in self._chunk_text(response_text):
+                    yield FinalResponseToken(token=token)
+                yield FinalResponse(text=response_text)
+                return
+
+        # 6. Memory Lookup (legacy unified_memory)
         mem_hit = unified_memory.search(user_input)
         if mem_hit:
             yield MemoryEvent(action="hit", tier="Facts", value=mem_hit)
@@ -505,6 +537,11 @@ class JarvisCore:
             if plan.requires_tools and self._final_text_is_pure_tool_call(final_text):
                 final_text = "Done."
             logger.info("[RESPONSE] %s", final_text[:200].replace("\n", " "))
+            
+            # Track assistant message in human memory
+            if self._human_memory_started:
+                human_memory.on_assistant_message(final_text)
+            
             for token in self._chunk_text(final_text):
                 yield FinalResponseToken(token=token)
             yield FinalResponse(text=final_text, confidence=plan.confidence)
@@ -543,6 +580,103 @@ class JarvisCore:
         except Exception as exc:
             logger.warning("LLM code generation failed: %s", exc)
             return None
+
+    async def process_stream_with_image(
+        self, user_input: str, image_context: dict[str, Any], history: Optional[list] = None
+    ) -> AsyncGenerator[BaseEvent, None]:
+        """Process user input with an attached image using multimodal support."""
+        if not self._booted:
+            self.boot()
+
+        logger.info("[USER][IMAGE] %s (image: %s)", user_input, image_context.get("image_name", "unknown"))
+        
+        # Track user message in human memory (text only, not image data)
+        if self._human_memory_started:
+            human_memory.on_user_message(user_input)
+
+        # Skip explicit memory commands for image requests (focus on vision)
+        # Images are processed directly through the multimodal LLM
+
+        # Planner still applies - the model might need tools after vision analysis
+        plan = planner_engine.build_plan(user_input)
+        logger.info("[ROUTER][IMAGE] Intent: %s (profile=%s, confidence=%.2f, tools=%s)",
+                    plan.steps[0].action_type if plan.steps else "response",
+                    plan.profile, plan.confidence, plan.requires_tools)
+        yield PlannerEvent(goal=plan.goal, steps=[s.action_type for s in plan.steps], profile=plan.profile, confidence=plan.confidence)
+
+        # Build multimodal message
+        # Format: image first, then text
+        image_data = image_context.get("image_data", "")
+        image_type = image_context.get("image_type", "image/jpeg")
+        
+        # Construct the multimodal message for Ollama
+        # Ollama format: {"role": "user", "images": [base64], "content": text}
+        multimodal_message = {
+            "role": "user",
+            "images": [image_data],
+            "content": user_input or "Analyze this image",
+        }
+
+        logger.info("[IMAGE] Preparing multimodal request")
+
+        # For image requests, we go directly to the LLM with the image
+        # Tool calling can still happen after vision analysis
+        candidate_cards = tool_registry.search_candidates(user_input, top_k=5) if plan.requires_tools else None
+        tool_schemas = tool_registry.get_tool_schemas_for_llm() if plan.requires_tools else []
+        
+        agent_messages = [multimodal_message]
+        final_text = ""
+
+        for iteration in range(MAX_AGENT_ITERATIONS):
+            logger.info("Agent loop iteration %d/%d (with image)", iteration + 1, MAX_AGENT_ITERATIONS)
+
+            # Call LLM with tools and image
+            # Note: chat_with_tools expects messages with role/content, but we need to pass the image
+            # We'll need to extend the brain adapter to handle images
+            try:
+                # For now, use chat_stream directly with the multimodal message
+                # The brain adapter needs to be extended to support images
+                llm_text = ""
+                async for token in self.brain_adapter.chat_stream(
+                    messages=agent_messages,
+                    temperature=0.25,
+                    max_tokens=2048,
+                ):
+                    if token.startswith("[") and ("Error" in token or "error" in token):
+                        logger.error("[IMAGE] LLM error: %s", token)
+                        final_text = "I couldn't process that image due to an error."
+                        break
+                    llm_text += token
+                    yield FinalResponseToken(token=token)
+                
+                final_text = llm_text
+            except Exception as exc:
+                logger.error("[IMAGE] LLM call failed: %s", exc)
+                final_text = f"I couldn't process that image: {str(exc)}"
+                for token in self._chunk_text(final_text):
+                    yield FinalResponseToken(token=token)
+                yield FinalResponse(text=final_text)
+                return
+
+            # Check if the LLM wants to call tools after vision analysis
+            if plan.requires_tools and final_text:
+                text_calls = tool_call_parser.parse_text(final_text)
+                if text_calls:
+                    logger.info("[EXECUTOR] Image response contains tool calls: %d", len(text_calls))
+                    for tc in text_calls:
+                        async for ev in self._execute_tool_call(tc, agent_messages, user_input):
+                            yield ev
+                    # Continue for tool results
+                    continue
+
+            # Final response
+            break
+
+        # Track assistant response in human memory
+        if self._human_memory_started:
+            human_memory.on_assistant_message(final_text)
+
+        yield FinalResponse(text=final_text)
 
     def _generate_fallback_code(self, query: str) -> Optional[str]:
         """Generate simple code for common patterns when no specialized tool exists."""

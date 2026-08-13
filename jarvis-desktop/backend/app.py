@@ -13,6 +13,7 @@ import logging
 import os
 import sys
 import time
+import base64
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any, Optional
@@ -332,6 +333,48 @@ class ChatRequest(BaseModel):
 
 
 # ═══════════════════════════════════════════════════════════════
+# IMAGE VALIDATION
+# ═══════════════════════════════════════════════════════════════
+
+ALLOWED_IMAGE_TYPES = {
+    "image/png",
+    "image/jpeg",
+    "image/jpg",
+    "image/webp",
+    "image/gif",
+}
+
+MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB
+
+
+def validate_image(file_type: str, file_data: str) -> tuple[bool, str, Optional[str]]:
+    """Validate uploaded image.
+    
+    Returns:
+        (is_valid, error_message, processed_data)
+    """
+    if not file_type or not file_data:
+        return False, "No image data provided", None
+    
+    # Check MIME type
+    if file_type.lower() not in ALLOWED_IMAGE_TYPES:
+        return False, f"Unsupported image type: {file_type}. Allowed: {', '.join(ALLOWED_IMAGE_TYPES)}", None
+    
+    # Decode base64 to check size
+    try:
+        image_bytes = base64.b64decode(file_data)
+        if len(image_bytes) > MAX_IMAGE_SIZE:
+            return False, f"Image too large. Max size is {MAX_IMAGE_SIZE // (1024*1024)}MB", None
+        if len(image_bytes) == 0:
+            return False, "Image data is empty", None
+    except Exception as e:
+        return False, f"Invalid image data: {str(e)}", None
+    
+    # Return the base64 data for the model
+    return True, "", file_data
+
+
+# ═══════════════════════════════════════════════════════════════
 # REST ENDPOINTS
 # ═══════════════════════════════════════════════════════════════
 
@@ -372,15 +415,67 @@ async def chat(request: Request):
             desktop_food = ""
         augmented_message = f"{desktop_food}\n\nUser Message: {message}" if desktop_food else message
 
-        # File upload
+        # File upload / Image input
         if file_data and file_name:
-            return {
-                "response": f"Received file: {file_name}. File analysis not yet wired to new engine.",
-                "session_id": session_id,
-                "timestamp": datetime.now().isoformat(),
-                "actions": [{"type": "file_analyzed", "filename": file_name}],
-                "suggestions": None,
+            # Validate image
+            is_valid, error_msg, processed_data = validate_image(file_type, file_data)
+            
+            if not is_valid:
+                logger.warning("[IMAGE] Validation failed: %s", error_msg)
+                return {
+                    "response": f"I couldn't process that image: {error_msg}",
+                    "session_id": session_id,
+                    "timestamp": datetime.now().isoformat(),
+                    "actions": None,
+                    "suggestions": None,
+                }
+            
+            logger.info("[IMAGE] Received image: %s (%s, size: %d bytes)", file_name, file_type, len(file_data))
+            
+            # Construct multimodal message for the core
+            # The message will include both the user's text and the image
+            user_text = message or "Analyze this image"
+            augmented_message = f"{desktop_food}\n\nUser Message: {user_text}" if desktop_food else user_text
+            
+            # Store image data for the core to process
+            # We'll pass it as part of the request context
+            image_context = {
+                "image_data": processed_data,
+                "image_type": file_type,
+                "image_name": file_name,
             }
+            
+            logger.info("[IMAGE] Preparing multimodal request for: %s", user_text[:50])
+            
+            # Process with image
+            try:
+                jarvis = await get_jarvis()
+                result = await jarvis.handle_with_image(augmented_message, image_context)
+                actions = build_actions(result)
+                
+                logger.info("[IMAGE] Vision response received: %d chars", len(result.get("response", "")))
+                
+                return {
+                    "response": result.get("response", ""),
+                    "session_id": session_id,
+                    "timestamp": datetime.now().isoformat(),
+                    "actions": actions if actions else None,
+                    "suggestions": None,
+                    "intent": result.get("intent", ""),
+                    "intent_confidence": result.get("intent_confidence", 0),
+                    "tool": result.get("tool", ""),
+                    "verified": result.get("verified", False),
+                    "total_ms": result.get("total_ms", 0),
+                }
+            except Exception as img_err:
+                logger.error("[IMAGE] Processing failed: %s", img_err, exc_info=True)
+                return {
+                    "response": f"I couldn't process that image. Please try again or check if the image is valid.",
+                    "session_id": session_id,
+                    "timestamp": datetime.now().isoformat(),
+                    "actions": None,
+                    "suggestions": None,
+                }
 
         # Streaming SSE — actually stream tokens from process_stream so the
         # client sees the first token the moment Ollama produces it instead

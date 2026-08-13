@@ -257,18 +257,65 @@ class JARVIS:
                 intent_confidence = holder.get("confidence", 0.0)
                 tool = holder.get("tool", "")
                 verified = holder.get("verified", False)
+
+    # ── handle_with_image ──────────────────────────────────────────────
+    async def handle_with_image(self, message: str, image_context: dict[str, Any]) -> dict[str, Any]:
+        """Process a user message with an attached image.
+        
+        Args:
+            message: User's text message
+            image_context: Dict with {image_data (base64), image_type, image_name}
+        
+        Returns:
+            Dict matching backend schema: {response, intent, intent_confidence, tool, verified, total_ms}
+        """
+        start = time.time()
+        if not self._boot_complete:
+            await self.boot()
+
+        response_text = ""
+        intent = "unknown"
+        intent_confidence = 0.0
+        tool = ""
+        verified = False
+        result_payload: dict[str, Any] = {}
+
+        if self._core is not None:
+            try:
+                holder: dict[str, Any] = {}
+
+                async def _collect() -> None:
+                    async for event in self._core.process_stream_with_image(message, image_context):
+                        etype = getattr(event, "event_type", "") or getattr(event, "type", "")
+                        if etype == "final_response":
+                            holder["text"] = getattr(event, "text", "")
+                        elif etype == "planner":
+                            holder["intent"] = getattr(event, "goal", "")
+                            holder["confidence"] = getattr(event, "confidence", 0.0)
+                        elif etype == "execution":
+                            holder["tool"] = getattr(event, "target_name", "")
+                        elif etype == "verification":
+                            holder["verified"] = getattr(event, "verified", False)
+                            holder["details"] = getattr(event, "details", {})
+
+                await asyncio.wait_for(_collect(), timeout=120.0)
+                response_text = holder.get("text", "")
+                intent = holder.get("intent", "unknown")
+                intent_confidence = holder.get("confidence", 0.0)
+                tool = holder.get("tool", "")
+                verified = holder.get("verified", False)
                 result_payload = holder.get("details", {}) or {}
             except asyncio.TimeoutError:
-                response_text = "(JARVIS timed out while processing your request.)"
+                response_text = "(JARVIS timed out while processing your image request.)"
             except Exception as exc:
-                logger.warning("process_stream failed: %s", exc)
+                logger.warning("process_stream_with_image failed: %s", exc)
                 response_text = f"(error: {exc})"
 
         if not response_text:
             response_text = (
                 "I heard you. The core orchestrator is wired up, but no "
-                "response was produced for this input. Check that a brain "
-                "(Ollama / OpenAI / etc.) is configured."
+                "response was produced for this image. Check that a vision-capable "
+                "brain (Ollama with vision model) is configured."
             )
 
         return {

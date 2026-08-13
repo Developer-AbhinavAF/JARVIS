@@ -213,7 +213,7 @@ class BrainAdapter:
 
     async def chat_stream(
         self,
-        messages: List[Dict[str, str]],
+        messages: List[Dict[str, Any]],  # Changed from Dict[str, str] to support images
         model: Optional[str] = None,
         temperature: float = 0.25,
         max_tokens: int = 2048,
@@ -322,7 +322,7 @@ class BrainAdapter:
 
     async def _stream_ollama(
         self,
-        messages: List[Dict[str, str]],
+        messages: List[Dict[str, Any]],  # Changed to support images
         model: str,
         temperature: float,
         max_tokens: int,

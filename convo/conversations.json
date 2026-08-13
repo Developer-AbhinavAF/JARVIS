@@ -854,5 +854,29 @@
     "provider": "",
     "model": "",
     "tier": "gpu"
+  },
+  {
+    "timestamp": 1786550057.97,
+    "user": "hello",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786550059.16,
+    "user": "hello",
+    "assistant": "You can open YouTube by using a web browser. ",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
+  },
+  {
+    "timestamp": 1786550064.42,
+    "user": "open youtube",
+    "assistant": "I'm having trouble processing that right now.",
+    "provider": "",
+    "model": "",
+    "tier": "gpu"
   }
 ]

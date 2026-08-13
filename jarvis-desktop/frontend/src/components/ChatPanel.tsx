@@ -21,6 +21,7 @@ import type { Message, MessageAction, MessageActions } from '@/types';
 import { extractResponseText } from '@/lib/jarvisProtocol';
 import { JarvisMessage } from './JarvisMessage';
 import { ImageResultCard, ImageGallery, type ImageResultData } from './ImageResult';
+import { ImageLightbox } from './ImageLightbox';
 
 const ACTION_LABELS: Record<string, string> = {
   open_app: '🚀 Opened App',
@@ -121,6 +122,7 @@ export default function ChatPanel() {
   const { messages, addMessage, deleteMessage, clearMessages, isTyping, setIsTyping, mode, input, setInput, chatExpandMode, cycleExpandMode } = useStore();
   const [error, setError] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<{ name: string; type: string; data: string } | null>(null);
+  const [lightboxImage, setLightboxImage] = useState<{ src: string; title: string } | null>(null);
   const { loading } = useChat();
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -222,7 +224,15 @@ export default function ChatPanel() {
       ? `${userMessage}${userMessage ? '\n\n' : ''}[Attached: ${uploadedFile.name}]`
       : userMessage;
 
-    addMessage({ role: 'user', content: messageContent });
+    addMessage({ 
+      role: 'user', 
+      content: messageContent,
+      imageAttachment: uploadedFile ? {
+        data: uploadedFile.data,
+        type: uploadedFile.type,
+        name: uploadedFile.name,
+      } : undefined,
+    });
     setIsTyping(true);
 
     try {
@@ -617,6 +627,18 @@ export default function ChatPanel() {
         </div>
       </div>
     </div>
+
+    {/* Image Lightbox */}
+    <AnimatePresence>
+      {lightboxImage && (
+        <ImageLightbox
+          src={lightboxImage.src}
+          title={lightboxImage.title}
+          onClose={() => setLightboxImage(null)}
+        />
+      )}
+    </AnimatePresence>
+  </>
   );
 }
 
@@ -682,6 +704,22 @@ const MessageBubble = React.memo(function MessageBubble({
           </div>
         ) : (
           <div className="space-y-1">
+            {/* Image Attachment */}
+            {message.imageAttachment && (
+              <div 
+                className="relative w-32 h-32 rounded-lg overflow-hidden bg-black/20 cursor-pointer hover:opacity-90 transition-opacity"
+                onClick={() => setLightboxImage({
+                  src: `data:${message.imageAttachment.type};base64,${message.imageAttachment.data}`,
+                  title: message.imageAttachment.name,
+                })}
+              >
+                <img
+                  src={`data:${message.imageAttachment.type};base64,${message.imageAttachment.data}`}
+                  alt={message.imageAttachment.name}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            )}
             {!isUser ? (
               <JarvisMessage content={message.content} />
             ) : (

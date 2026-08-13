@@ -72,3 +72,8 @@ Thumbs.db
 # Windsurf specific
 Windsurf/
 windsurf/
+
+# google auth services
+
+credentials.json
+token.json
