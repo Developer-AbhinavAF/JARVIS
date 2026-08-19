@@ -219,34 +219,52 @@ class GoogleDriveApi:
             try:
                 with open(credentials_file, "r", encoding="utf-8") as f:
                     client_secret = json.load(f)
-            except (OSError, json.JSONDecodeError) as exc:
-                logger.error("DRIVE_CONFIG client_secret unreadable: %s", exc)
+            except FileNotFoundError:
+                logger.error("DRIVE_AUTH_MISSING: credentials.json not found at %s", credentials_file)
+                raise RuntimeError("DRIVE_AUTH_MISSING: credentials.json not found")
+            except (json.JSONDecodeError, OSError) as exc:
+                logger.error("DRIVE_AUTH_INVALID: credentials.json unreadable: %s", exc)
+                raise RuntimeError(f"DRIVE_AUTH_INVALID: credentials.json unreadable: {exc}")
+        else:
+            logger.error("DRIVE_AUTH_MISSING: GOOGLE_DRIVE_CREDENTIALS_FILE not set")
+            raise RuntimeError("DRIVE_AUTH_MISSING: GOOGLE_DRIVE_CREDENTIALS_FILE not set")
 
         if client_secret and client_secret.get("type") == "service_account":
             creds = SACredentials.from_service_account_info(
                 client_secret, scopes=["https://www.googleapis.com/auth/drive"]
             )
         elif token_file and os.path.exists(token_file):
-            creds = Credentials.from_authorized_user_file(
-                token_file,
-                ["https://www.googleapis.com/auth/drive"],
-            )
+            try:
+                creds = Credentials.from_authorized_user_file(
+                    token_file,
+                    ["https://www.googleapis.com/auth/drive"],
+                )
+            except Exception as exc:
+                logger.error("DRIVE_TOKEN_INVALID: token.json unreadable: %s", exc)
+                raise RuntimeError(f"DRIVE_TOKEN_INVALID: token.json unreadable: {exc}")
+            
             if creds and creds.expired and creds.refresh_token:
                 try:
                     creds.refresh(Request())
                     with open(token_file, "w", encoding="utf-8") as f:
                         f.write(creds.to_json())
                 except Exception as exc:
-                    logger.error("DRIVE_AUTH token refresh failed: %s", exc)
+                    logger.error("DRIVE_TOKEN_REFRESH_FAILED: %s", exc)
+                    raise RuntimeError(f"DRIVE_TOKEN_REFRESH_FAILED: {exc}")
+            elif creds and creds.expired:
+                logger.error("DRIVE_TOKEN_EXPIRED: token expired and no refresh token")
+                raise RuntimeError("DRIVE_TOKEN_EXPIRED: token expired and no refresh token")
         elif client_secret:
+            logger.error("DRIVE_TOKEN_MISSING: OAuth token missing - run authorization flow")
             raise RuntimeError(
-                "DRIVE_AUTH: OAuth token missing. Run the one-time "
+                "DRIVE_TOKEN_MISSING: OAuth token missing. Run the one-time "
                 "authorization flow to produce the token file, then set "
                 "GOOGLE_DRIVE_TOKEN_FILE."
             )
         else:
+            logger.error("DRIVE_AUTH_MISSING: no credentials or token configured")
             raise RuntimeError(
-                "DRIVE_AUTH: no credentials. Set GOOGLE_DRIVE_CREDENTIALS_FILE "
+                "DRIVE_AUTH_MISSING: no credentials. Set GOOGLE_DRIVE_CREDENTIALS_FILE "
                 "and GOOGLE_DRIVE_TOKEN_FILE."
             )
 
@@ -562,10 +580,17 @@ class GoogleDriveMemoryStore:
         folder_key: str,
         name: str,
         data: Any,
+        async_sync: bool = True,
     ) -> Dict[str, Any]:
         """Persist data locally (atomic), then synchronise to Drive.
 
-        Returns {"synced": bool, "file_id": str|None, "local": path}.
+        Args:
+            folder_key: The folder key (e.g., "active", "important")
+            name: The file name
+            data: The data to save (will be JSON-serialized)
+            async_sync: If True, sync to Drive in background thread (non-blocking)
+
+        Returns {"synced": bool, "file_id": str|None, "local": path, "pending": bool}.
         A Drive failure marks the entry pending and keeps the local copy.
         """
         path = self._local_path(folder_key, name)
@@ -594,21 +619,52 @@ class GoogleDriveMemoryStore:
             self._save_pending()
 
         file_id = self._hierarchy.get(f"file:{folder_key}:{name}")
-        synced = self._sync_one(folder_key, name, payload, file_id)
-
-        if synced:
+        
+        if async_sync:
+            # Sync in background thread for non-blocking behavior
+            import threading
+            sync_thread = threading.Thread(
+                target=self._sync_one_blocking,
+                args=(folder_key, name, payload, file_id),
+                daemon=True
+            )
+            sync_thread.start()
             return {
-                "synced": True,
-                "file_id": self._hierarchy.get(f"file:{folder_key}:{name}"),
+                "synced": False,  # Not synced yet (async)
+                "file_id": file_id,
                 "local": str(path),
-                "pending": False,
+                "pending": True,
             }
-        return {
-            "synced": False,
-            "file_id": None,
-            "local": str(path),
-            "pending": True,
-        }
+        else:
+            # Synchronous sync (for critical operations)
+            synced = self._sync_one(folder_key, name, payload, file_id)
+            if synced:
+                return {
+                    "synced": True,
+                    "file_id": self._hierarchy.get(f"file:{folder_key}:{name}"),
+                    "local": str(path),
+                    "pending": False,
+                }
+            return {
+                "synced": False,
+                "file_id": None,
+                "local": str(path),
+                "pending": True,
+            }
+
+    def _sync_one_blocking(
+        self,
+        folder_key: str,
+        name: str,
+        payload: Optional[str],
+        known_file_id: Optional[str],
+    ) -> bool:
+        """Blocking version of _sync_one for background thread execution."""
+        try:
+            return self._sync_one(folder_key, name, payload, known_file_id)
+        except Exception as exc:
+            logger.error("[DRIVE] Background sync failed for %s/%s: %s", folder_key, name, exc)
+            return False
 
     def _sync_one(
         self,
@@ -1028,7 +1084,7 @@ class HumanLikeMemory:
                 f"file:active:{self._session_path.name}"
             )
             result = self.store.save_file(
-                "active", self._session_path.name, session
+                "active", self._session_path.name, session, async_sync=True
             )
             if result.get("synced"):
                 self._session_drive_file_id = result.get("file_id")
@@ -1107,7 +1163,7 @@ class HumanLikeMemory:
             messages, day, granularity="daily"
         )
 
-        saved = self.store.save_file("summary_daily", name, summary)
+        saved = self.store.save_file("summary_daily", name, summary, async_sync=True)
         if not saved.get("synced") and not self.config.drive_enabled:
             # Local-only mode still counts as persisted when fallback enabled.
             pass
@@ -1378,7 +1434,7 @@ class HumanLikeMemory:
                     "sources": [f"daily/{p.name}" for p in month_files],
                     "keywords": _keywords(combined, None, 20),
                 }
-                saved = self.store.save_file("summary_weekly", weekly_name, weekly)
+                saved = self.store.save_file("summary_weekly", weekly_name, weekly, async_sync=True)
                 self._index_entry({
                     "memory_id": _content_hash("weekly|" + week),
                     "file_id": saved.get("file_id"),
@@ -1411,7 +1467,7 @@ class HumanLikeMemory:
                     "sources": [f"daily/{p.name}" for p in month_files],
                     "keywords": _keywords(combined, None, 22),
                 }
-                saved = self.store.save_file("summary_monthly", monthly_name, monthly)
+                saved = self.store.save_file("summary_monthly", monthly_name, monthly, async_sync=True)
                 self._index_entry({
                     "memory_id": _content_hash("monthly|" + month),
                     "file_id": saved.get("file_id"),
@@ -1626,7 +1682,7 @@ class HumanLikeMemory:
             old_rec["status"] = "superseded"
             old_rec["superseded_by"] = memory_id
             old_rec["updated_at"] = now
-            self.store.save_file("important", old_name, old_rec)
+            self.store.save_file("important", old_name, old_rec, async_sync=True)
             self._record_if_indexed("important", old_rec)
             memory_id = _content_hash(f"{content}|{now}")
             logger.info("MEMORY_UPDATE superseded=%s new=%s", old_id, memory_id)
@@ -1645,7 +1701,7 @@ class HumanLikeMemory:
             "status": "active",
         }
         name = f"important_{memory_id}.json"
-        saved = self.store.save_file("important", name, record)
+        saved = self.store.save_file("important", name, record, async_sync=True)
 
         # verify: file exists locally AND (drive synced OR drive disabled)
         verified = self.store.read_file("important", name) is not None
@@ -1717,7 +1773,7 @@ class HumanLikeMemory:
             "tags": tags,
         }
         name = f"correction_{memory_id}.json"
-        saved = self.store.save_file("correction", name, record)
+        saved = self.store.save_file("correction", name, record, async_sync=True)
         verified = self.store.read_file("correction", name) is not None
         synced = saved.get("synced") or not self.store.api
 
@@ -1767,7 +1823,7 @@ class HumanLikeMemory:
         if existing:
             logger.info("MEMORY_DEDUP type=knowledge id=%s (update only)", memory_id)
             existing["updated_at"] = now
-            saved = self.store.save_file("knowledge", f"knowledge_{memory_id}.json", existing)
+            saved = self.store.save_file("knowledge", f"knowledge_{memory_id}.json", existing, async_sync=True)
             return {
                 "success": True,
                 "stored": True,
@@ -1787,7 +1843,7 @@ class HumanLikeMemory:
             "status": "active",
         }
         name = f"knowledge_{memory_id}.json"
-        saved = self.store.save_file("knowledge", name, record)
+        saved = self.store.save_file("knowledge", name, record, async_sync=True)
         verified = self.store.read_file("knowledge", name) is not None
         synced = saved.get("synced") or not self.store.api
 
@@ -1847,7 +1903,7 @@ class HumanLikeMemory:
         record = self.store.read_file("important", name) or {}
         record["status"] = "retired"
         record["retired_at"] = _now_iso()
-        self.store.save_file("important", name, record)
+        self.store.save_file("important", name, record, async_sync=True)
         if memory_id in self._important_index:
             self._important_index[memory_id]["active"] = False
             self._flush_index()
@@ -1920,9 +1976,9 @@ class HumanLikeMemory:
     def _flush_index(self) -> None:
         if not self.config.index_enabled:
             return
-        self.store.save_file("index", "memory_index.json", self._index)
-        self.store.save_file("index", "important_index.json", self._important_index)
-        self.store.save_file("index", "session_index.json", self._session_index)
+        self.store.save_file("index", "memory_index.json", self._index, async_sync=False)
+        self.store.save_file("index", "important_index.json", self._important_index, async_sync=False)
+        self.store.save_file("index", "session_index.json", self._session_index, async_sync=False)
         self._index_flushed_at = time.time()
         logger.info("MEMORY_INDEX_UPDATE entries=%d", len(self._index))
 

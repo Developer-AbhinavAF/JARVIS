@@ -68,6 +68,7 @@ const ACTION_LABELS: Record<string, string> = {
   empty_recycle: '🗑️ Recycle Bin Emptied',
   task_manager: '📊 Task Manager',
   terminal: '💻 Terminal',
+  execute: '⚡ Execute',
 };
 
 function getActionLabel(action: MessageAction): string {
@@ -189,8 +190,8 @@ export default function ChatPanel() {
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      setError('File too large. Max size is 5MB.');
+    if (file.size > 10 * 1024 * 1024) {
+      setError('File too large. Max size is 10MB.');
       return;
     }
     const reader = new FileReader();
@@ -314,6 +315,15 @@ export default function ChatPanel() {
                   fullResponse += `\n\n[Code execution: ${ce.language}] ${ce.stderr || 'failed'}`;
                 }
               }
+              if (data.execute) {
+                // Execute tag result — append info to response
+                const ex = data.execute;
+                if (ex.status === 'success') {
+                  fullResponse += `\n\n[Executed: ${ex.execution_type}] ${ex.command.substring(0, 50)}${ex.command.length > 50 ? '...' : ''} ✓`;
+                } else {
+                  fullResponse += `\n\n[Execution failed: ${ex.execution_type}] ${ex.error || ex.stderr || 'exit code ' + ex.exit_code}`;
+                }
+              }
               if (data.done) {
                 fullResponse = data.response || fullResponse;
                 actions = data.actions || [];
@@ -413,6 +423,7 @@ export default function ChatPanel() {
   }, [messages]);
 
   return (
+    <>
     <div className="flex-1 flex flex-col h-full overflow-hidden">
       {/* Messages Area - Virtual Scrolled */}
       <div
@@ -538,7 +549,7 @@ export default function ChatPanel() {
                 <p className="text-xs font-medium text-jarvis-text truncate">{uploadedFile.name}</p>
                 <p className="text-[10px] text-jarvis-textMuted">
                   {(uploadedFile.data.length * 0.75 / 1024 / 1024).toFixed(2)} MB
-                  {uploadedFile.type.startsWith('image/') ? ' • Image' : ` • ${uploadedFile.type.split('/')[1]?.toUpperCase() || 'File'}`}
+                  {uploadedFile.type.startsWith('image/') ? ' • Image' : uploadedFile.type.startsWith('video/') ? ' • Video' : ` • ${uploadedFile.type.split('/')[1]?.toUpperCase() || 'File'}`}
                 </p>
               </div>
               <motion.button
@@ -571,7 +582,7 @@ export default function ChatPanel() {
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*,.pdf,.txt,.doc,.docx"
+            accept="image/*,video/*,.pdf,.txt,.doc,.docx"
             onChange={handleFileUpload}
             className="hidden"
           />
@@ -587,7 +598,7 @@ export default function ChatPanel() {
             }`}
             whileHover={!uploadedFile ? { scale: 1.05 } : {}}
             whileTap={!uploadedFile ? { scale: 0.95 } : {}}
-            title="Upload file or image"
+            title="Upload file, image, or video (max 10MB)"
           >
             <Paperclip size={16} />
           </motion.button>

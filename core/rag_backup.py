@@ -1,16 +1,14 @@
 """core/rag.py — Dynamic Adaptive RAG Engine for JARVIS vNext++.
 
 Dynamically selects Top-K retrieval context based on query intent:
-|- Greeting / Tool Action: Top-K = 0 (0 tokens)
-|- Simple Question: Top-K = 2 (~400 tokens)
-|- Coding / Documentation: Top-K = 4 (~800 tokens)
-|- Research: Top-K = 6 (~1000 tokens)
-|- Large Planning / Architecture: Top-K = 8 (~1200 tokens)
+- Greeting / Tool Action: Top-K = 0 (0 tokens)
+- Simple Question: Top-K = 2 (~400 tokens)
+- Coding / Documentation: Top-K = 4 (~800 tokens)
+- Research: Top-K = 6 (~1000 tokens)
+- Large Planning / Architecture: Top-K = 8 (~1200 tokens)
 
 Maximum injected context is strictly capped at 1200 tokens.
 All vector embedding generation runs asynchronously.
-
-Now integrated with web_food_loader for /web_food directory support.
 """
 
 from __future__ import annotations
@@ -25,29 +23,17 @@ logger = logging.getLogger(__name__)
 
 
 class DynamicRAGEngine:
-    """Dynamic Adaptive RAG implementation with web_food integration."""
+    """Dynamic Adaptive RAG implementation."""
 
     def __init__(self, docs_dir: str = "docs"):
         self.docs_dir = Path(docs_dir)
         self.docs_dir.mkdir(parents=True, exist_ok=True)
         self._document_chunks: List[Dict[str, str]] = []
-        
-        # Try to load web_food_loader
-        self._web_food_loader = None
-        try:
-            from core.web_food_loader import web_food_loader
-            self._web_food_loader = web_food_loader
-            logger.info("RAG: Integrated with web_food_loader")
-        except ImportError:
-            logger.warning("RAG: web_food_loader not available, using legacy loading")
-        
         self._load_documents()
 
     def _load_documents(self) -> None:
         """Load text/markdown files from docs/ and foods/."""
         self._document_chunks = []
-        
-        # Load from legacy directories
         for search_dir in ["docs", "foods", "tool_docs"]:
             p = Path(search_dir)
             if not p.exists():
@@ -65,29 +51,6 @@ class DynamicRAGEngine:
                         })
                 except Exception as e:
                     logger.error(f"Error loading RAG doc {file}: {e}")
-        
-        # Load from web_food if available
-        if self._web_food_loader:
-            try:
-                # Check for changes and reload if needed
-                self._web_food_loader.check_and_reload()
-                
-                # Add web_food documents to chunks
-                web_food_docs = self._web_food_loader.get_document_list()
-                for doc in web_food_docs:
-                    content = doc.get("content", "")
-                    if content:
-                        chunks = self._chunk_text(content, chunk_size=1500)
-                        for idx, chunk in enumerate(chunks):
-                            self._document_chunks.append({
-                                "source": f"web_food/{doc['path']}",
-                                "chunk_id": f"{doc['path']}_{idx}",
-                                "content": chunk,
-                            })
-                
-                logger.info("RAG: Loaded %d documents from web_food", len(web_food_docs))
-            except Exception as e:
-                logger.error("Error loading web_food documents: %s", e)
 
     def _chunk_text(self, text: str, chunk_size: int = 1500) -> List[str]:
         """Simple token-approximating character chunker."""
@@ -119,16 +82,6 @@ class DynamicRAGEngine:
 
     def format_rag_context(self, query: str, top_k: int = 2) -> str:
         """Format retrieved chunks as prompt context string."""
-        # Try to use web_food_loader for smarter retrieval
-        if self._web_food_loader:
-            try:
-                relevant_content = self._web_food_loader.get_relevant_content(query, max_tokens=1000)
-                if relevant_content:
-                    return f"Retrieved Knowledge:\n{relevant_content}"
-            except Exception as e:
-                logger.error("Error using web_food_loader for retrieval: %s", e)
-        
-        # Fall back to legacy retrieval
         chunks = self.retrieve(query, top_k=top_k)
         if not chunks:
             return ""
@@ -140,24 +93,6 @@ class DynamicRAGEngine:
         # Enforce max 1200 token cap
         res = "\n".join(formatted)
         return res[:4800]  # ~1200 tokens max
-    
-    def reload_if_changed(self) -> bool:
-        """Check for changes and reload documents if needed."""
-        changed = False
-        
-        # Check web_food changes
-        if self._web_food_loader:
-            try:
-                if self._web_food_loader.check_and_reload():
-                    changed = True
-                    logger.info("RAG: Reloaded web_food documents")
-            except Exception as e:
-                logger.error("Error checking web_food changes: %s", e)
-        
-        # Reload legacy documents
-        self._load_documents()
-        
-        return changed
 
 
 rag_engine = DynamicRAGEngine()

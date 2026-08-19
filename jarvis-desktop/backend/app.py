@@ -115,7 +115,7 @@ def _get_boot_lock() -> asyncio.Lock:
 # on the cloud GPU + ngrok round-trip) can take a long time. Generous defaults
 # to keep the UI from looking hung while the model is warming up. Overridable
 # via environment variables.
-HANDLE_TIMEOUT_SECONDS = float(os.getenv("JARVIS_HANDLE_TIMEOUT", "240"))   # 4 min
+HANDLE_TIMEOUT_SECONDS = float(os.getenv("JARVIS_HANDLE_TIMEOUT", "360"))   # 6 min
 STREAM_TIMEOUT_SECONDS = float(os.getenv("JARVIS_STREAM_TIMEOUT", "360"))   # 6 min (first token)
 OLLAMA_WARMUP_TIMEOUT = float(os.getenv("OLLAMA_WARMUP_TIMEOUT", "180"))    # 3 min warmup cap
 
@@ -282,6 +282,18 @@ def build_actions(result: dict) -> list[dict[str, Any]]:
                 })
     elif tool == "code_fallback":
         actions.append({"type": "code_execution", "language": data.get("language", ""), "success": data.get("success", False)})
+    elif data.get("execution_type"):  # Execute event from SSE stream
+        actions.append({
+            "type": "execute",
+            "execution_type": data.get("execution_type", ""),
+            "command": data.get("command", ""),
+            "status": data.get("status", ""),
+            "exit_code": data.get("exit_code", -1),
+            "stdout": data.get("stdout", ""),
+            "stderr": data.get("stderr", ""),
+            "duration_ms": data.get("duration_ms", 0),
+            "error": data.get("error", ""),
+        })
 
     return actions
 
@@ -344,7 +356,15 @@ ALLOWED_IMAGE_TYPES = {
     "image/gif",
 }
 
+ALLOWED_VIDEO_TYPES = {
+    "video/mp4",
+    "video/webm",
+    "video/quicktime",
+    "video/x-msvideo",
+}
+
 MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB
+MAX_VIDEO_SIZE = 10 * 1024 * 1024  # 10MB
 
 
 def validate_image(file_type: str, file_data: str) -> tuple[bool, str, Optional[str]]:
@@ -369,6 +389,33 @@ def validate_image(file_type: str, file_data: str) -> tuple[bool, str, Optional[
             return False, "Image data is empty", None
     except Exception as e:
         return False, f"Invalid image data: {str(e)}", None
+    
+    # Return the base64 data for the model
+    return True, "", file_data
+
+
+def validate_video(file_type: str, file_data: str) -> tuple[bool, str, Optional[str]]:
+    """Validate uploaded video.
+    
+    Returns:
+        (is_valid, error_message, processed_data)
+    """
+    if not file_type or not file_data:
+        return False, "No video data provided", None
+    
+    # Check MIME type
+    if file_type.lower() not in ALLOWED_VIDEO_TYPES:
+        return False, f"Unsupported video type: {file_type}. Allowed: {', '.join(ALLOWED_VIDEO_TYPES)}", None
+    
+    # Decode base64 to check size
+    try:
+        video_bytes = base64.b64decode(file_data)
+        if len(video_bytes) > MAX_VIDEO_SIZE:
+            return False, f"Video too large. Max size is {MAX_VIDEO_SIZE // (1024*1024)}MB", None
+        if len(video_bytes) == 0:
+            return False, "Video data is empty", None
+    except Exception as e:
+        return False, f"Invalid video data: {str(e)}", None
     
     # Return the base64 data for the model
     return True, "", file_data
@@ -417,43 +464,54 @@ async def chat(request: Request):
 
         # File upload / Image input
         if file_data and file_name:
-            # Validate image
-            is_valid, error_msg, processed_data = validate_image(file_type, file_data)
+            # Detect if image or video and validate accordingly
+            if file_type and file_type.startswith("image/"):
+                is_valid, error_msg, processed_data = validate_image(file_type, file_data)
+                media_type = "image"
+            elif file_type and file_type.startswith("video/"):
+                is_valid, error_msg, processed_data = validate_video(file_type, file_data)
+                media_type = "video"
+            else:
+                is_valid = False
+                error_msg = f"Unsupported file type: {file_type}. Allowed types: {', '.join(list(ALLOWED_IMAGE_TYPES) + list(ALLOWED_VIDEO_TYPES))}"
+                processed_data = None
+                media_type = "unknown"
             
             if not is_valid:
-                logger.warning("[IMAGE] Validation failed: %s", error_msg)
+                logger.warning("[%s] Validation failed: %s", media_type.upper(), error_msg)
                 return {
-                    "response": f"I couldn't process that image: {error_msg}",
+                    "response": f"I couldn't process that {media_type}: {error_msg}",
                     "session_id": session_id,
                     "timestamp": datetime.now().isoformat(),
                     "actions": None,
                     "suggestions": None,
                 }
             
-            logger.info("[IMAGE] Received image: %s (%s, size: %d bytes)", file_name, file_type, len(file_data))
+            logger.info("[%s] Received %s: %s (%s, size: %d bytes)", media_type.upper(), media_type, file_name, file_type, len(file_data))
             
             # Construct multimodal message for the core
-            # The message will include both the user's text and the image
-            user_text = message or "Analyze this image"
+            # The message will include both the user's text and the media
+            user_text = message or f"Analyze this {media_type}"
             augmented_message = f"{desktop_food}\n\nUser Message: {user_text}" if desktop_food else user_text
             
-            # Store image data for the core to process
+            # Store media data for the core to process
             # We'll pass it as part of the request context
-            image_context = {
-                "image_data": processed_data,
-                "image_type": file_type,
-                "image_name": file_name,
+            media_context = {
+                "media_data": processed_data,
+                "media_type": file_type,
+                "media_name": file_name,
+                "media_category": media_type,
             }
             
-            logger.info("[IMAGE] Preparing multimodal request for: %s", user_text[:50])
+            logger.info("[%s] Preparing multimodal request for: %s", media_type.upper(), user_text[:50])
             
-            # Process with image
+            # Process with media
             try:
                 jarvis = await get_jarvis()
-                result = await jarvis.handle_with_image(augmented_message, image_context)
+                result = await jarvis.handle_with_image(augmented_message, media_context)
                 actions = build_actions(result)
                 
-                logger.info("[IMAGE] Vision response received: %d chars", len(result.get("response", "")))
+                logger.info("[%s] Vision response received: %d chars", media_type.upper(), len(result.get("response", "")))
                 
                 return {
                     "response": result.get("response", ""),
@@ -467,10 +525,10 @@ async def chat(request: Request):
                     "verified": result.get("verified", False),
                     "total_ms": result.get("total_ms", 0),
                 }
-            except Exception as img_err:
-                logger.error("[IMAGE] Processing failed: %s", img_err, exc_info=True)
+            except Exception as media_err:
+                logger.error("[%s] Processing failed: %s", media_type.upper(), media_err, exc_info=True)
                 return {
-                    "response": f"I couldn't process that image. Please try again or check if the image is valid.",
+                    "response": f"I couldn't process that {media_type}. Please try again or check if the {media_type} is valid.",
                     "session_id": session_id,
                     "timestamp": datetime.now().isoformat(),
                     "actions": None,
@@ -488,27 +546,35 @@ async def chat(request: Request):
                 tool = ""
                 verified = False
                 meta: dict[str, Any] = {}
+                event_count = 0
                 try:
                     jarvis = await get_jarvis()
                     stream_start = time.time()
+                    logger.info("[BACKEND] Starting event_stream for message: '%s'", augmented_message[:50])
 
                     async def _drain():
                         """Pull tokens from the core / fallback and yield
                         (kind, payload) tuples. Lives inside a coroutine so we
                         can apply a deadline to the whole drain."""
-                        nonlocal full_text, intent, intent_confidence, tool, verified, meta
+                        nonlocal full_text, intent, intent_confidence, tool, verified, meta, event_count
                         if jarvis._core is not None and hasattr(jarvis._core, "process_stream"):
+                            logger.info("[BACKEND] Starting process_stream from jarvis._core")
                             async for event in jarvis._core.process_stream(augmented_message):
+                                event_count += 1
                                 etype = getattr(event, "event_type", "") or getattr(event, "type", "")
+                                logger.debug("[BACKEND] Event %d: type=%s", event_count, etype)
+                                
                                 if etype == "response_token":
                                     token = getattr(event, "token", "")
                                     if token:
                                         full_text += token
+                                        logger.debug("[BACKEND] Token event: '%s'", token[:20])
                                         yield ("token", token)
                                 elif etype == "final_response":
                                     resp_text = getattr(event, "text", "") or ""
                                     if resp_text and resp_text != full_text:
                                         full_text = resp_text
+                                        logger.info("[BACKEND] Final response: '%s'", resp_text[:50])
                                         yield ("token", resp_text)
                                 elif etype == "planner":
                                     intent = getattr(event, "goal", "") or intent
@@ -547,6 +613,18 @@ async def chat(request: Request):
                                         "exit_code": getattr(event, "exit_code", -1),
                                     }
                                     yield ("code_execution", code_data)
+                                elif etype == "execute":
+                                    execute_data = {
+                                        "execution_type": getattr(event, "execution_type", ""),
+                                        "command": getattr(event, "command", ""),
+                                        "status": getattr(event, "status", ""),
+                                        "exit_code": getattr(event, "exit_code", -1),
+                                        "stdout": getattr(event, "stdout", ""),
+                                        "stderr": getattr(event, "stderr", ""),
+                                        "duration_ms": getattr(event, "duration_ms", 0.0),
+                                        "error": getattr(event, "error", ""),
+                                    }
+                                    yield ("execute", execute_data)
                         else:
                             result = await jarvis.handle(augmented_message)
                             full_text = result.get("response", "")
@@ -559,6 +637,7 @@ async def chat(request: Request):
                                 yield ("token", full_text[i:i + 3])
 
                     drain = _drain()
+                    token_count = 0
                     try:
                         while True:
                             try:
@@ -566,8 +645,14 @@ async def chat(request: Request):
                                     drain.__anext__(), timeout=STREAM_TIMEOUT_SECONDS
                                 )
                             except StopAsyncIteration:
+                                logger.info("[BACKEND] Drain stopped (StopAsyncIteration), tokens processed: %d", token_count)
                                 break
+                            
+                            logger.debug("[BACKEND] Received kind=%s, payload length=%d", kind, len(str(payload)))
+                            
                             if kind == "token":
+                                token_count += 1
+                                logger.debug("[BACKEND] Emitting token %d: '%s'", token_count, str(payload)[:20])
                                 yield f"data: {json.dumps({'token': payload})}\n\n"
                             elif kind == "image_result":
                                 yield f"data: {json.dumps({'image_result': payload})}\n\n"
@@ -601,7 +686,8 @@ async def chat(request: Request):
 
                     actions = build_actions({"tool": tool, "result": meta if isinstance(meta, dict) else {}})
                     total_ms = int((time.time() - stream_start) * 1000)
-                    logger.info("JARVIS stream (%sms%s): %s", total_ms, f" tool={tool}" if tool else "", full_text[:200])
+                    logger.info("[BACKEND] JARVIS stream complete: %d tokens, total_ms=%d, full_text='%s'", 
+                               token_count, total_ms, full_text[:100])
                     yield f"data: {json.dumps({'done': True, 'response': full_text, 'actions': actions, 'intent': intent, 'intent_confidence': intent_confidence, 'tool': tool, 'verified': verified, 'total_ms': total_ms})}\n\n"
                 except asyncio.CancelledError:
                     raise
@@ -623,8 +709,10 @@ async def chat(request: Request):
         # hold the client forever. The previous 30s cap is too tight when
         # the model is still warming up.
         jarvis = await get_jarvis()
+        logger.info("[BACKEND] Using non-streaming mode for message: '%s'", augmented_message[:50])
         try:
             result = await asyncio.wait_for(jarvis.handle(augmented_message), timeout=HANDLE_TIMEOUT_SECONDS)
+            logger.info("[BACKEND] jarvis.handle() returned: response length=%d", len(result.get("response", "")))
         except asyncio.TimeoutError:
             logger.warning("handle() exceeded %.0fs timeout", HANDLE_TIMEOUT_SECONDS)
             result = {
@@ -643,7 +731,7 @@ async def chat(request: Request):
         ai_response = result.get("response", "")
         total_ms = result.get("total_ms", 0)
         tool = result.get("tool", "")
-        logger.info("JARVIS (%sms%s): %s", total_ms, f" tool={tool}" if tool else "", ai_response[:200])
+        logger.info("[BACKEND] JARVIS non-streaming (%sms%s): %s", total_ms, f" tool={tool}" if tool else "", ai_response[:200])
 
         return {
             "response": ai_response,

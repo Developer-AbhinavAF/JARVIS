@@ -18,6 +18,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import asyncio
+import json
 
 import pytest
 
@@ -29,7 +30,7 @@ from core.events import ExecutionEvent, VerificationEvent
 def make_core(monkeypatch, brain_script, handler):
     """Build a JarvisCore with scripted brain + executor.
 
-    brain_script(n_tool_results) -> LLMResult
+    brain_script(n_tool_results) -> LLMResult or generator
     handler(tool_name, kwargs)   -> structured result dict
     Returns (core, executed_log).
     """
@@ -49,10 +50,55 @@ def make_core(monkeypatch, brain_script, handler):
     async def fake_chat_with_tools(messages, tools=None, temperature=0.25,
                                    max_tokens=2048):
         n_tool_results = sum(1 for m in messages if m.get("role") == "tool")
-        return brain_script(n_tool_results)
+        result = brain_script(n_tool_results)
+        # Support both LLMResult and generator for streaming
+        if asyncio.iscoroutine(result):
+            result = await result
+        if isinstance(result, LLMResult):
+            return result
+        # If brain_script returns a generator, collect it
+        if hasattr(result, '__aiter__'):
+            collected = ""
+            async for chunk in result:
+                collected += chunk
+            return LLMResult(content=collected, done=True)
+        return result
+
+    async def fake_chat_stream(messages, model=None, temperature=0.25,
+                               max_tokens=2048, tools=None, tool_call_sink=None):
+        n_tool_results = sum(1 for m in messages if m.get("role") == "tool")
+        result = brain_script(n_tool_results)
+        # Support both LLMResult and generator for streaming
+        if asyncio.iscoroutine(result):
+            result = await result
+        if isinstance(result, LLMResult):
+            # If there are tool calls, collect them in the sink
+            if result.tool_calls and tool_call_sink is not None:
+                for idx, tc in enumerate(result.tool_calls):
+                    tool_call_sink[idx] = {
+                        "name": tc.name,
+                        "arguments": json.dumps(tc.arguments),
+                        "call_id": tc.call_id or "",
+                    }
+            # Stream the content
+            for char in result.content:
+                yield char
+            return
+        # If brain_script returns a generator, stream it
+        if hasattr(result, '__aiter__'):
+            async for chunk in result:
+                yield chunk
+            return
+        # Stream the content
+        for char in result.content:
+            yield char
 
     monkeypatch.setattr(core.brain_adapter, "chat_with_tools",
                         fake_chat_with_tools)
+    monkeypatch.setattr(core.brain_adapter, "chat_stream",
+                        fake_chat_stream)
+    monkeypatch.setattr(core.brain_adapter, "_flush_tool_call_slots",
+                        lambda sink, target: target.extend([ToolCall(name=t.get("name"), arguments=json.loads(t.get("arguments", "{}")), call_id=t.get("call_id")) for t in sink.values()]))
     return core, executed
 
 

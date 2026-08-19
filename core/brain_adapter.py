@@ -27,6 +27,15 @@ try:
 except ImportError:
     pass
 
+from core.message_auditor import message_auditor
+
+try:
+    from core.capability_router import capability_router
+    CAPABILITY_ROUTER_AVAILABLE = True
+except ImportError:
+    CAPABILITY_ROUTER_AVAILABLE = False
+    logger.warning("Capability router not available, using legacy provider selection")
+
 logger = logging.getLogger(__name__)
 
 
@@ -64,7 +73,7 @@ class BrainAdapter:
     DEFAULT_OLLAMA_URL = "https://kiersten-nonpunishable-carry.ngrok-free.dev"
     DEFAULT_MODEL = "jarvis-agi"
 
-    OLLAMA_TIMEOUT = float(os.getenv("OLLAMA_REQUEST_TIMEOUT", "60"))
+    OLLAMA_TIMEOUT = float(os.getenv("OLLAMA_REQUEST_TIMEOUT", "360"))
     OLLAMA_CONNECT_TIMEOUT = float(os.getenv("OLLAMA_CONNECT_TIMEOUT", "10"))
 
     def __init__(self, provider: str = "ollama", model: str | None = None):
@@ -97,6 +106,31 @@ class BrainAdapter:
         return url.rstrip("/")
 
     async def warmup(self) -> bool:
+        """Warmup the LLM provider by checking availability."""
+        # Check configuration changes first
+        try:
+            from core.config_manager import config_manager
+            config_manager.reload_configuration()
+        except ImportError:
+            pass
+        
+        # Use capability router if available
+        if CAPABILITY_ROUTER_AVAILABLE:
+            try:
+                # Check if any provider is available
+                from core.provider_registry import provider_registry
+                available_providers = provider_registry.get_available_providers()
+                if available_providers:
+                    logger.info("Warmup: %d providers available", len(available_providers))
+                    return True
+                else:
+                    logger.warning("Warmup: No providers available")
+                    return False
+            except Exception as e:
+                logger.warning("Capability router warmup failed: %s", e)
+                # Fall back to legacy warmup
+        
+        # Legacy warmup
         import httpx
         try:
             logger.info(
@@ -115,9 +149,19 @@ class BrainAdapter:
                     "options": {"num_ctx": 4096, "num_predict": 8},
                 }
                 url = self._ollama_url() + "/api/chat"
+                logger.info("[WARMUP] Testing connection to %s", url)
                 async with warmup_client.stream("POST", url, json=payload) as response:
-                    async for _ in response.aiter_lines():
-                        pass
+                    logger.info("[WARMUP] Response status: %d", response.status_code)
+                    if response.status_code != 200:
+                        error_body = await response.aread()
+                        logger.error("[WARMUP] Error response: %s", error_body[:200])
+                        return False
+                    line_count = 0
+                    async for line in response.aiter_lines():
+                        line_count += 1
+                        if line_count > 5:  # Just read a few lines to verify streaming works
+                            break
+                    logger.info("[WARMUP] Successfully read %d lines from stream", line_count)
             finally:
                 try:
                     await warmup_client.aclose()
@@ -128,6 +172,8 @@ class BrainAdapter:
             return True
         except Exception as e:
             logger.warning("Warmup failed (continuing): %s", e)
+            import traceback
+            logger.debug(traceback.format_exc())
             return False
 
     def _get_http_client(self):
@@ -223,6 +269,51 @@ class BrainAdapter:
     ) -> AsyncGenerator[str, None]:
         target_model = model or self.primary_model
 
+        # TEMPORARILY DISABLED: Use new capability router if available
+        # if CAPABILITY_ROUTER_AVAILABLE:
+        #     try:
+        #         kwargs = {
+        #             "temperature": temperature,
+        #             "max_tokens": max_tokens,
+        #         }
+        #         if tools:
+        #             kwargs["tools"] = tools
+        #         
+        #         logger.info("[BRAIN_ADAPTER] Using capability router for streaming")
+        #         
+        #         # Add tool call sink support for the new router
+        #         # (This would need to be implemented in the provider layer)
+        #         
+        #         token_count = 0
+        #         async for token in capability_router.route_chat_stream(messages, model=target_model, **kwargs):
+        #             # Handle tool call fragments if the router supports them
+        #             if tool_call_sink is not None and token.startswith("[" ) and "tool_calls" in token:
+        #                 # Parse tool call fragments from the stream
+        #                 # This is a simplified version - the actual implementation would need proper parsing
+        #                 pass
+        #             
+        #             # Skip error tokens
+        #             if token.startswith("[Error") or token.startswith("[Ollama"):
+        #                 logger.warning("[BRAIN_ADAPTER] Skipping error token: %s", token[:50])
+        #                 continue
+        #             
+        #             if token:
+        #                 token_count += 1
+        #                 yield token
+        #         
+        #         logger.info("[BRAIN_ADAPTER] Capability router streaming complete: %d tokens", token_count)
+        #         return
+        #     except Exception as e:
+        #         logger.warning("Capability router failed, falling back to legacy: %s", e)
+        #         import traceback
+        #         logger.debug(traceback.format_exc())
+        #         # Continue to legacy fallback
+        
+        logger.info("[BRAIN_ADAPTER] Using legacy streaming (capability router disabled for debugging)")
+
+        # Legacy fallback logic
+        logger.info("[BRAIN_ADAPTER] Using provider: %s, model: %s", self.provider, target_model)
+        
         # Tunnel offline → go straight to Groq
         if self.provider == "ollama" and self._ollama_offline:
             logger.warning("Ollama offline, using Groq fallback")
@@ -231,20 +322,28 @@ class BrainAdapter:
             return
 
         if self.provider == "ollama":
+            logger.info("[BRAIN_ADAPTER] Streaming from Ollama")
             ollama_failed = False
+            token_count = 0
             async for token in self._stream_ollama(messages, target_model, temperature, max_tokens, options, tools=tools, tool_call_sink=tool_call_sink):
                 if token.startswith("[Ollama"):
                     ollama_failed = True
+                    logger.warning("[BRAIN_ADAPTER] Ollama error detected: %s", token[:50])
                     continue
-                yield token
+                if token:
+                    token_count += 1
+                    yield token
+            logger.info("[BRAIN_ADAPTER] Ollama streaming complete: %d tokens, failed=%s", token_count, ollama_failed)
             if ollama_failed or self._ollama_offline:
                 logger.warning("Ollama failed, falling back to Groq")
                 async for token in self._stream_groq(messages, self._groq_model_name(target_model), temperature, max_tokens, tools=tools, tool_call_sink=tool_call_sink):
                     yield token
         elif self.provider == "groq":
+            logger.info("[BRAIN_ADAPTER] Streaming from Groq")
             async for token in self._stream_groq(messages, self._groq_model_name(target_model), temperature, max_tokens, tools=tools, tool_call_sink=tool_call_sink):
                 yield token
         else:
+            logger.info("[BRAIN_ADAPTER] Using default Ollama streaming")
             ollama_failed = False
             async for token in self._stream_ollama(messages, target_model, temperature, max_tokens, options, tools=tools, tool_call_sink=tool_call_sink):
                 if token.startswith("[Ollama"):
@@ -267,21 +366,75 @@ class BrainAdapter:
 
         Returns an LLMResult containing any text content and/or tool calls.
         This is the primary entry point for the agent loop.
+        
+        NOTE: This buffers the entire response. For true streaming, use chat_stream directly.
         """
         target_model = model or self.primary_model
         full_text = ""
         tool_calls: List[ToolCall] = []
         native_sink: Dict[int, Dict[str, str]] = {}
+        
+        stream_start = time.time()
+        first_token_time = None
 
-        # Use streaming to collect the full response.
+        # TEMPORARILY DISABLED: Use new capability router if available for non-streaming requests too
+        # if CAPABILITY_ROUTER_AVAILABLE:
+        #     try:
+        #         kwargs = {
+        #             "temperature": temperature,
+        #             "max_tokens": max_tokens,
+        #             "tools": tools,
+        #         }
+        #         
+        #         response = await capability_router.route_chat(messages, model=target_model, **kwargs)
+        #         
+        #         if response.success:
+        #             # Parse tool calls from response if present
+        #             # The new router returns ProviderResponse, we need to convert to LLMResult
+        #             full_text = response.content
+        #             
+        #             # Try to parse tool calls from the response
+        #             if full_text.strip():
+        #                 from core.toolcall_parser import tool_call_parser
+        #                 text_calls = tool_call_parser.parse_text(full_text)
+        #                 if text_calls:
+        #                     tool_calls.extend(text_calls)
+        #             
+        #             return LLMResult(
+        #                 content=full_text,
+        #                 tool_calls=tool_calls,
+        #                 provider=response.provider,
+        #                 model=response.model,
+        #                 done=True,
+        #             )
+        #         else:
+        #             logger.error("Capability router failed: %s", response.error)
+        #             # Fall back to legacy streaming
+        #     except Exception as e:
+        #         logger.warning("Capability router chat_with_tools failed, falling back to legacy: %s", e)
+
+        logger.info("[BRAIN_ADAPTER] chat_with_tools using legacy streaming")
+        
+        # Use streaming to collect the full response (legacy fallback).
+        token_count = 0
         async for token in self.chat_stream(
             messages, model=target_model, temperature=temperature,
             max_tokens=max_tokens, tools=tools,
             tool_call_sink=native_sink,
         ):
+            if first_token_time is None and token:
+                first_token_time = time.time()
+                ttft = (first_token_time - stream_start) * 1000
+                logger.info("[TTFT] First token: %.0fms", ttft)
+                
             if token.startswith("[") and ("Error" in token or "error" in token or "offline" in token):
+                logger.warning("[BRAIN_ADAPTER] Error token detected in chat_with_tools: %s", token[:50])
                 return LLMResult(content="", provider=self.provider, model=target_model, done=False)
-            full_text += token
+            if token:
+                token_count += 1
+                full_text += token
+        
+        logger.info("[BRAIN_ADAPTER] chat_with_tools complete: %d tokens collected, final_text length=%d", token_count, len(full_text))
 
         self._flush_tool_call_slots(native_sink, tool_calls)
         if tool_calls:
@@ -332,8 +485,15 @@ class BrainAdapter:
     ) -> AsyncGenerator[str, None]:
         url = self._ollama_url() + "/api/chat"
         start = time.time()
+        
+        # Audit message payload before sending to model
+        audit = message_auditor.audit_messages(messages, source="core/brain_adapter._stream_ollama")
+        message_auditor.log_audit(audit, context="OLLAMA REQUEST")
+        
         try:
             client = self._get_http_client()
+            logger.info("[OLLAMA_REQUEST] HTTP client obtained: %s", type(client))
+            
             payload = {
                 "model": model,
                 "messages": messages,
@@ -350,7 +510,10 @@ class BrainAdapter:
             if tools:
                 payload["tools"] = tools
 
-            logger.info("OLLAMA → %s model=%s", url, model)
+            logger.info("OLLAMA → %s model=%s, messages count=%d", url, model, len(messages))
+            logger.debug("[OLLAMA_REQUEST] Payload preview: model=%s, stream=%s, options keys=%s", 
+                        payload.get("model"), payload.get("stream"), list(payload.get("options", {}).keys()))
+            
             async with client.stream("POST", url, json=payload) as response:
                 if response.status_code != 200:
                     body_snippet = ""
@@ -377,8 +540,12 @@ class BrainAdapter:
                 self._ollama_offline = False
                 token_count = 0
                 first_token_time = None
+                line_count = 0
+                logger.info("[OLLAMA_STREAM] Starting to read response lines")
                 async for line in response.aiter_lines():
+                    line_count += 1
                     if not line:
+                        logger.debug("[OLLAMA_STREAM] Empty line %d", line_count)
                         continue
                     try:
                         data = json.loads(line)
@@ -394,11 +561,15 @@ class BrainAdapter:
                                 first_token_time = time.time()
                                 logger.info("OLLAMA first token in %.1fs", first_token_time - start)
                             token_count += 1
+                            logger.debug("[OLLAMA_STREAM] Token %d: '%s'", token_count, token[:20])
                             yield token
-                    except Exception:
+                        else:
+                            logger.debug("[OLLAMA_STREAM] Line %d has no content, message keys: %s", line_count, list(message.keys()))
+                    except Exception as e:
+                        logger.warning("[OLLAMA_STREAM] Error parsing line %d: %s, line: %s", line_count, e, line[:100])
                         continue
                 elapsed = time.time() - start
-                logger.info("OLLAMA done: %d tokens in %.1fs (%.1f tok/s)", token_count, elapsed, token_count / max(elapsed, 0.01))
+                logger.info("OLLAMA done: %d lines read, %d tokens in %.1fs (%.1f tok/s)", line_count, token_count, elapsed, token_count / max(elapsed, 0.01))
         except Exception as e:
             elapsed = time.time() - start
             logger.error("Ollama error after %.1fs: %s", elapsed, e)
@@ -424,6 +595,11 @@ class BrainAdapter:
             model = "llama-3.1-8b-instant"
 
         start = time.time()
+        
+        # Audit message payload before sending to model
+        audit = message_auditor.audit_messages(messages, source="core/brain_adapter._stream_groq")
+        message_auditor.log_audit(audit, context="GROQ REQUEST")
+        
         try:
             import httpx
             url = "https://api.groq.com/openai/v1/chat/completions"

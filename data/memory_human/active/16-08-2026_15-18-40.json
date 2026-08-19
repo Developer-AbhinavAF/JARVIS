@@ -1,0 +1,20 @@
+{
+  "session_id": "session-c6d9edec0a4a277a",
+  "started_at": "2026-08-16T09:48:40+00:00",
+  "ended_at": null,
+  "timezone": "India Standard Time",
+  "recovered": true,
+  "status": "active",
+  "messages": [
+    {
+      "timestamp": "2026-08-16T09:49:28+00:00",
+      "role": "user",
+      "content": "[Desktop UI Context]\nchannel: jarvis-desktop\n\n\nUser Message: hello"
+    },
+    {
+      "timestamp": "2026-08-16T09:49:37+00:00",
+      "role": "user",
+      "content": "[Desktop UI Context]\nchannel: jarvis-desktop\n\n\nUser Message: hello"
+    }
+  ]
+}

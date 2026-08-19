@@ -257,6 +257,25 @@ class JARVIS:
                 intent_confidence = holder.get("confidence", 0.0)
                 tool = holder.get("tool", "")
                 verified = holder.get("verified", False)
+            except Exception as exc:
+                logger.warning("process_stream failed: %s", exc)
+                response_text = f"(error: {exc})"
+
+        if not response_text:
+            response_text = (
+                "I heard you. The core orchestrator is wired up, but no "
+                "response was produced. Check that a brain (Ollama) is configured."
+            )
+
+        return {
+            "response": response_text,
+            "intent": intent,
+            "intent_confidence": intent_confidence,
+            "tool": tool,
+            "verified": verified,
+            "total_ms": int((time.time() - start) * 1000),
+            "result": result_payload,
+        }
 
     # ── handle_with_image ──────────────────────────────────────────────
     async def handle_with_image(self, message: str, image_context: dict[str, Any]) -> dict[str, Any]:

@@ -200,3 +200,19 @@ class CodeExecutionEvent(BaseEvent):
 
     def __post_init__(self):
         self.event_type = "code_execution"
+
+
+@dataclass
+class ExecuteEvent(BaseEvent):
+    """Emitted when <execute> tag command execution completes."""
+    execution_type: str = ""
+    command: str = ""
+    status: str = ""  # success, failed
+    exit_code: int = -1
+    stdout: str = ""
+    stderr: str = ""
+    duration_ms: float = 0.0
+    error: Optional[str] = None
+
+    def __post_init__(self):
+        self.event_type = "execute"

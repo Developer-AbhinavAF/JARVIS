@@ -1,0 +1,15 @@
+{
+  "memory_id": "5828f8172fcd2197",
+  "created_at": "2026-08-13T12:59:57+00:00",
+  "updated_at": "2026-08-13T12:59:57+00:00",
+  "importance": "explicit",
+  "source": "user_explicit_save",
+  "content": "[Desktop UI Context] channel: jarvis-desktop User Message: save that using <color value=\"red\"> type something here </color> to use red color text",
+  "type": "fact",
+  "key": null,
+  "value": null,
+  "tags": [
+    "explicit"
+  ],
+  "status": "active"
+}

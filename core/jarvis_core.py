@@ -27,10 +27,11 @@ from core.events import (
     ImageResultEvent,
     ImageGalleryEvent,
     CodeExecutionEvent,
+    ExecuteEvent,
 )
 
 # ── Pipeline timeouts ────────────────────────────────────────────────
-MAX_LLM_STREAM_SECONDS = 60.0
+MAX_LLM_STREAM_SECONDS = 360.0
 MAX_TOOL_EXECUTION_SECONDS = 45.0
 MAX_AGENT_ITERATIONS = 8
 
@@ -52,6 +53,19 @@ from core.learning_engine import learning_engine, FailureEvent
 from core.performance_manager import performance_manager
 from core.diagnostics import self_diagnostics
 from core.background_workers import background_workers
+from core.execute_parser import execute_parser
+from core.execute_engine import execute_engine
+
+# New multi-provider architecture
+try:
+    from core.provider_registry import provider_registry
+    from core.capability_router import capability_router
+    from core.config_manager import config_manager
+    from core.web_food_loader import web_food_loader
+    MULTI_PROVIDER_AVAILABLE = True
+except ImportError:
+    MULTI_PROVIDER_AVAILABLE = False
+    logger.warning("Multi-provider architecture not available, using legacy systems")
 
 logger = logging.getLogger(__name__)
 
@@ -201,6 +215,33 @@ class JarvisCore:
         logger.info("Booting JARVIS vNext++ Core...")
         health = self_diagnostics.run_diagnostics()
         
+        # Initialize multi-provider architecture if available
+        if MULTI_PROVIDER_AVAILABLE:
+            try:
+                logger.info("Initializing multi-provider architecture...")
+                
+                # Start configuration monitoring
+                config_manager.start_monitoring()
+                logger.info("Configuration monitoring started")
+                
+                # Log provider status
+                provider_status = provider_registry.get_provider_status()
+                logger.info("Provider registry: %d providers loaded", len(provider_status))
+                for provider_name, status in provider_status.items():
+                    logger.info("  %s: enabled=%s, available=%s, keys=%d", 
+                              provider_name, status['enabled'], status['available'], status['keys_count'])
+                
+                # Log web_food status
+                web_food_stats = web_food_loader.get_stats()
+                logger.info("Web food loader: %d documents loaded", web_food_stats['total_documents'])
+                
+                # Log router status
+                router_status = capability_router.get_status()
+                logger.info("Capability router: ready with max_attempts=%d", router_status['max_attempts'])
+                
+            except Exception as e:
+                logger.error("Error initializing multi-provider architecture: %s", e)
+        
         # Start human-like memory system
         if not self._human_memory_started:
             memory_startup = human_memory.startup()
@@ -234,12 +275,36 @@ class JarvisCore:
         self, user_input: str, history: Optional[list] = None
     ) -> AsyncGenerator[BaseEvent, None]:
         """Unified execution pipeline with agent loop for tool calling."""
+        request_start = time.time()
+        request_id = f"req_{int(request_start * 1000)}"
+        
+        logger.info("[%s] [PROCESS_START] user_input='%s', length=%d", request_id, user_input, len(user_input))
+        
         if not self._booted:
+            logger.info("[%s] [BOOT] Booting JarvisCore", request_id)
             self.boot()
 
+        # Load conversation history from conversation_store if not provided
+        if history is None:
+            try:
+                from core.conversation_store import conversation_store
+                history = conversation_store.messages(limit=8)
+                logger.info("[%s] [SESSION] loaded %d messages from history", request_id, len(history))
+            except Exception as e:
+                logger.warning("[%s] [SESSION] failed to load history: %s", request_id, e)
+                history = []
+
         # 1-5. Intent, Context, World State
-        logger.info("[USER] %s", user_input)
+        logger.info("[%s] [REQUEST] %s", request_id, user_input[:100])
         world_state_engine.update(last_user_request=user_input)
+        
+        # Check for configuration changes (multi-provider architecture)
+        if MULTI_PROVIDER_AVAILABLE:
+            try:
+                config_manager.reload_configuration()
+                rag_engine.reload_if_changed()
+            except Exception as e:
+                logger.debug("[%s] [CONFIG] Error checking for changes: %s", request_id, e)
         
         # Track user message in human memory
         if self._human_memory_started:
@@ -261,13 +326,17 @@ class JarvisCore:
                 return
 
         # 6. Memory Lookup (legacy unified_memory)
+        memory_start = time.time()
         mem_hit = unified_memory.search(user_input)
+        memory_end = time.time()
+        logger.info("[%s] [MEMORY] retrieval %.0fms", request_id, (memory_end - memory_start) * 1000)
         if mem_hit:
             yield MemoryEvent(action="hit", tier="Facts", value=mem_hit)
 
         # 7-8. Planner Layer
         plan = planner_engine.build_plan(user_input)
-        logger.info("[ROUTER] Intent: %s (profile=%s, confidence=%.2f, tools=%s)",
+        logger.info("[%s] [PLANNER] Intent: %s (profile=%s, confidence=%.2f, tools=%s)",
+                    request_id,
                     plan.steps[0].action_type if plan.steps else "response",
                     plan.profile, plan.confidence, plan.requires_tools)
         yield PlannerEvent(goal=plan.goal, steps=[s.action_type for s in plan.steps], profile=plan.profile, confidence=plan.confidence)
@@ -473,11 +542,22 @@ class JarvisCore:
                             yield FinalResponse(text=err_text)
                             return
 
-        # ── AGENT LOOP: LLM with native tool calling ────────────────
+        # ── AGENT LOOP: LLM with native tool calling (TRUE STREAMING) ─────
         # Build messages for the LLM
+        prompt_start = time.time()
         candidate_cards = tool_registry.search_candidates(user_input, top_k=5) if plan.requires_tools else None
         assembled = prompt_assembler.assemble(user_input, plan, history=history, tool_cards=candidate_cards)
         adj_predict, adj_top_k = performance_manager.adapt_parameters(assembled.max_tokens, plan.top_k_rag)
+        prompt_end = time.time()
+        logger.info("[%s] [PROMPT] build %.0fms", request_id, (prompt_end - prompt_start) * 1000)
+        
+        # Log provider information if using multi-provider architecture
+        if MULTI_PROVIDER_AVAILABLE:
+            try:
+                router_status = capability_router.get_routing_stats()
+                logger.info("[%s] [ROUTER] routing stats: %s", request_id, router_status)
+            except Exception as e:
+                logger.debug("[%s] [ROUTER] Error getting routing stats: %s", request_id, e)
 
         # Get native tool schemas for the LLM
         tool_schemas = tool_registry.get_tool_schemas_for_llm() if plan.requires_tools else []
@@ -489,62 +569,157 @@ class JarvisCore:
                 "role": "system",
                 "content": memory_write_note,
             })
-        final_text = ""
+        
+        # For streaming, we accumulate tokens and emit them immediately
+        accumulated_text = ""
+        native_sink: Dict[int, Dict[str, str]] = {}
+        first_token_emitted = False
+        final_text = ""  # Initialize to avoid UnboundLocalError
 
         for iteration in range(MAX_AGENT_ITERATIONS):
-            logger.info("Agent loop iteration %d/%d", iteration + 1, MAX_AGENT_ITERATIONS)
+            logger.info("[%s] [AGENT] iteration %d/%d", request_id, iteration + 1, MAX_AGENT_ITERATIONS)
 
-            # Call LLM with tools
-            llm_result = await asyncio.wait_for(
-                self.brain_adapter.chat_with_tools(
-                    messages=agent_messages,
-                    tools=tool_schemas,
-                    temperature=0.25,
-                    max_tokens=adj_predict,
-                ),
-                timeout=MAX_LLM_STREAM_SECONDS,
-            )
+            # Stream from LLM
+            ollama_start = time.time()
+            accumulated_text = ""
+            native_sink = {}
+            token_count = 0
+            
+            logger.info("[%s] [AGENT] Starting chat_stream with model=%s", request_id, self.brain_adapter.primary_model)
+            
+            async for token in self.brain_adapter.chat_stream(
+                messages=agent_messages,
+                model=self.brain_adapter.primary_model,
+                temperature=0.25,
+                max_tokens=adj_predict,
+                tools=tool_schemas,
+                tool_call_sink=native_sink,
+            ):
+                if not first_token_emitted and token:
+                    first_token_emitted = True
+                    ttft = (time.time() - ollama_start) * 1000
+                    logger.info("[%s] [TTFT] First token emitted: %.0fms", request_id, ttft)
+                
+                # Emit token immediately for streaming
+                if token and not token.startswith("["):  # Skip error markers
+                    token_count += 1
+                    accumulated_text += token
+                    yield FinalResponseToken(token=token)
+            
+            ollama_end = time.time()
+            logger.info("[%s] [OLLAMA] stream complete %.0fms, accumulated_text length=%d, token_count=%d", 
+                       request_id, (ollama_end - ollama_start) * 1000, len(accumulated_text), token_count)
 
-            # If LLM returned tool calls, execute them
-            if llm_result.tool_calls:
-                for tc in llm_result.tool_calls:
+            # Flush and check for native tool calls
+            tool_calls: List[ToolCall] = []
+            self.brain_adapter._flush_tool_call_slots(native_sink, tool_calls)
+            
+            if tool_calls:
+                logger.info("[%s] [AGENT] Native tool calls: %s", request_id, [tc.name for tc in tool_calls])
+                # Execute tools
+                for tc in tool_calls:
                     async for ev in self._execute_tool_call(tc, agent_messages, user_input):
                         yield ev
-                # Continue the loop — LLM will see tool results and respond
+                # Continue loop with tool results
                 continue
 
-            # No tool calls — this is the final text response
-            final_text = llm_result.content or ""
-
-            # Post-stream: check if LLM generated a tool call as text (fallback).
-            # Only the valid tool-call structure triggers execution; any other
-            # JSON/text remains an ordinary LLM response.
-            if plan.requires_tools and final_text:
-                text_calls = tool_call_parser.parse_text(final_text)
+            # Check for text-based tool calls (fallback)
+            if plan.requires_tools and accumulated_text.strip():
+                text_calls = tool_call_parser.parse_text(accumulated_text)
                 if text_calls:
+                    logger.info("[%s] [AGENT] Text tool calls: %s", request_id, [tc.name for tc in text_calls])
                     for tc in text_calls:
                         async for ev in self._execute_tool_call(tc, agent_messages, user_input):
                             yield ev
-                    final_text = ""  # Clear — don't leak tool call text
+                    accumulated_text = ""  # Clear tool call text
                     continue
 
-            # Normal text response — yield it and break
+            # No tool calls - this is the final response
+            final_text = accumulated_text or ""
             break
 
+        # Parse and execute <execute> tags from final text
+        if final_text and execute_parser.has_execute_tags(final_text):
+            execute_requests = execute_parser.parse(final_text)
+            
+            for req in execute_requests:
+                if req.is_valid:
+                    yield ExecutionEvent(target_name=f"execute_{req.execution_type}", status="executing")
+                    
+                    result = execute_engine.execute(req)
+                    
+                    yield ExecuteEvent(
+                        execution_type=result.execution_type,
+                        command=result.command,
+                        status=result.status,
+                        exit_code=result.exit_code,
+                        stdout=result.stdout,
+                        stderr=result.stderr,
+                        duration_ms=result.duration_ms,
+                        error=result.error
+                    )
+                    
+                    # Remove execute tags from response text
+                    final_text = execute_parser.remove_execute_tags(final_text)
+                    
+                    # If execution failed, update response to reflect failure
+                    if result.status == "failed":
+                        final_text = f"Execution failed: {result.error or result.stderr}"
+                else:
+                    logger.warning("[EXECUTE] Invalid execute request: %s", req.error)
+
         # Stream the final response
+        logger.info("[%s] [FINAL_TEXT_CHECK] final_text length: %d, content: '%s'", request_id, len(final_text), final_text[:100] if final_text else "(empty)")
+        
         if final_text:
             # Safety net: never surface raw tool-call JSON as a response.
             if plan.requires_tools and self._final_text_is_pure_tool_call(final_text):
                 final_text = "Done."
-            logger.info("[RESPONSE] %s", final_text[:200].replace("\n", " "))
+            logger.info("[%s] [RESPONSE] %s", request_id, final_text[:200].replace("\n", " "))
             
-            # Track assistant message in human memory
+            # Save to conversation store
+            try:
+                from core.conversation_store import conversation_store
+                conversation_store.append(
+                    user=user_input,
+                    assistant=final_text,
+                    provider=self.brain_adapter.provider,
+                    model=self.brain_adapter.primary_model,
+                    tier="desktop"
+                )
+                logger.info("[%s] [SESSION] saved conversation turn", request_id)
+            except Exception as e:
+                logger.warning("[%s] [SESSION] failed to save conversation: %s", request_id, e)
+            
+            # Track assistant message in human memory (non-blocking)
             if self._human_memory_started:
-                human_memory.on_assistant_message(final_text)
+                import threading
+                def save_memory_async():
+                    try:
+                        memory_save_start = time.time()
+                        human_memory.on_assistant_message(final_text)
+                        memory_save_end = time.time()
+                        logger.info("[%s] [MEMORY] background save %.0fms", request_id, (memory_save_end - memory_save_start) * 1000)
+                    except Exception as e:
+                        logger.warning("[%s] [MEMORY] background save failed: %s", request_id, e)
+                
+                memory_thread = threading.Thread(target=save_memory_async, daemon=True)
+                memory_thread.start()
+                logger.info("[%s] [MEMORY] save queued in background", request_id)
             
+            token_count = 0
             for token in self._chunk_text(final_text):
+                token_count += 1
                 yield FinalResponseToken(token=token)
+            logger.info("[%s] [STREAMING] Emitted %d FinalResponseToken events", request_id, token_count)
             yield FinalResponse(text=final_text, confidence=plan.confidence)
+            logger.info("[%s] [STREAMING] Emitted FinalResponse event", request_id)
+        else:
+            logger.warning("[%s] [NO_RESPONSE] final_text is empty, sending default response", request_id)
+            yield FinalResponse(text="I apologize, but I couldn't generate a response. Please try again.", confidence=0.0)
+        
+        total_latency = time.time() - request_start
+        logger.info("[%s] [COMPLETE] total %.0fms", request_id, total_latency * 1000)
 
     async def _ask_llm_for_code(self, query: str) -> Optional[str]:
         """Generate Python code via the LLM for fallback execution.

@@ -1,0 +1,15 @@
+{
+  "memory_id": "30e716158c262626",
+  "created_at": "2026-08-13T12:59:23+00:00",
+  "updated_at": "2026-08-13T12:59:23+00:00",
+  "importance": "explicit",
+  "source": "user_explicit_save",
+  "content": "[Desktop UI Context] channel: jarvis-desktop User Message: can you save something in your permanent memory?",
+  "type": "fact",
+  "key": null,
+  "value": null,
+  "tags": [
+    "explicit"
+  ],
+  "status": "active"
+}
