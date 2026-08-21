@@ -1,7 +1,10 @@
-"""core/foods.py — Dynamic Food Injection Engine with Hot Reload for JARVIS vNext++.
+"""core/foods.py — Ultra-Optimized Food Injection Engine for JARVIS AGI.
 
 Compiles prompt food files from foods/*.md into an internal index.
 Dynamically injects only intent-relevant food prompt instructions.
+
+Optimized for multi-model orchestration with Groq as primary.
+Uses high-density "Cognitive Primes" - minimal tokens, maximum effect.
 """
 
 from __future__ import annotations
@@ -38,28 +41,53 @@ class DynamicFoodEngine:
                 except Exception as e:
                     logger.error(f"Error reading food {file}: {e}")
 
-    def get_food_for_intent(self, intent: str) -> str:
-        """Return only intent-relevant food prompt section."""
+    def get_food_for_intent(self, intent: str, session_id: str = "default") -> str:
+        """Return optimized food prompt based on intent.
+        
+        Includes orchestration instructions for multi-model routing.
+        Uses cognitive primes: short, high-impact phrases.
+        """
         self.reload()  # Check mtimes for hot reload
         
         intent_clean = intent.lower()
-        if "code" in intent_clean or "debug" in intent_clean:
-            return self._index.get("01_reasoning.md", "")
-        elif "tool" in intent_clean or "open" in intent_clean:
-            return self._index.get("02_tools.md", "")
-        elif "memory" in intent_clean:
-            return self._index.get("03_memory.md", "")
-        elif "desktop" in intent_clean:
-            return self._index.get("05_desktop.md", "")
-        elif "nasa" in intent_clean or "visual" in intent_clean:
-            return self._index.get("22_nasa_visual.md", "")
-        elif "conversation" in intent_clean or "chat" in intent_clean:
-            return self._index.get("10_personality.md", "")
-        elif "writing" in intent_clean:
-            return self._index.get("19_response_style.md", "")
+        foods_list = []
         
-        # Default identity food
-        return self._index.get("00_identity.md", "")
+        # Always include identity (core being)
+        if "00_identity.md" in self._index:
+            foods_list.append(self._index["00_identity.md"])
+        
+        # Include orchestration (multi-model brain)
+        if "23_orchestration.md" in self._index:
+            foods_list.append(self._index["23_orchestration.md"])
+        
+        # Intent-specific cognitive primes
+        if any(k in intent_clean for k in ["code", "debug", "fix", "run"]):
+            if "01_reasoning.md" in self._index:
+                foods_list.append(self._index["01_reasoning.md"])
+        elif any(k in intent_clean for k in ["tool", "open", "close", "execute"]):
+            if "02_tools.md" in self._index:
+                foods_list.append(self._index["02_tools.md"])
+        elif any(k in intent_clean for k in ["memory", "remember", "recall", "learn"]):
+            if "03_memory.md" in self._index:
+                foods_list.append(self._index["03_memory.md"])
+        elif "desktop" in intent_clean:
+            if "05_desktop.md" in self._index:
+                foods_list.append(self._index["05_desktop.md"])
+        elif any(k in intent_clean for k in ["nasa", "space", "image", "visual"]):
+            if "22_nasa_visual.md" in self._index:
+                foods_list.append(self._index["22_nasa_visual.md"])
+        elif any(k in intent_clean for k in ["chat", "talk", "conversation"]):
+            if "10_personality.md" in self._index:
+                foods_list.append(self._index["10_personality.md"])
+        elif any(k in intent_clean for k in ["write", "email", "text"]):
+            if "19_response_style.md" in self._index:
+                foods_list.append(self._index["19_response_style.md"])
+        
+        # Safety always included (non-negotiable)
+        if "11_safety.md" in self._index:
+            foods_list.append(self._index["11_safety.md"])
+        
+        return "\n\n".join(foods_list) if foods_list else self._index.get("00_identity.md", "")
 
 
 food_engine = DynamicFoodEngine()

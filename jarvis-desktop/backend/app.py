@@ -325,9 +325,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="JARVIS Desktop", version="3.0", lifespan=lifespan)
 
+# ═══════════════════════════════════════════════════════════════
+# CORS MIDDLEWARE — allow Frontend (5173)
+# ═══════════════════════════════════════════════════════════════
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:5173",  # Vite frontend dev server
+        "http://127.0.0.1:5173",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
