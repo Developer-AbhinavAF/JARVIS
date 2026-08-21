@@ -113,6 +113,12 @@ _EXTERNAL_ACTION_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# ── n8n Gateway Direct Commands ─────────────────────────────────────
+# These are proxied from n8n Smart Gateway — bypass complex planning.
+_N8N_EXECUTE_PATTERN = re.compile(r"^execute this code:", re.IGNORECASE)
+_N8N_MEMORY_PATTERN = re.compile(r"^recall from memory:", re.IGNORECASE)
+_N8N_WEBSEARCH_PATTERN = re.compile(r"^search the web for:", re.IGNORECASE)
+
 # ── Patterns for NASA / visual / image requests ────────────────────────
 # These are visual intent — the user wants to SEE images/videos.
 # "explain NASA" or "what is NASA" should NOT match (those are knowledge).
@@ -165,16 +171,43 @@ class PlannerEngine:
         Priority:
         1. Safety / system constraints
         2. Explicit user intent
-        3. Conversation (ALWAYS first for normal chat)
-        4. Writing / generation
-        5. Memory
-        6. Knowledge / RAG
-        7. External search (only explicit)
-        8. Computer tools (only explicit)
-        9. Speech output
+        3. n8n Gateway direct commands (execute/memory/websearch)
+        4. Conversation (ALWAYS first for normal chat)
+        5. Writing / generation
+        6. Memory
+        7. Knowledge / RAG
+        8. External search (only explicit)
+        9. Computer tools (only explicit)
+        10. Speech output
         """
         query_lower = query.lower().strip()
         plan = ExecutionPlan(goal=query)
+
+        # ── n8n Gateway Direct Commands — bypass complex planning ────────
+        # These are proxied from n8n Smart Gateway with specific session IDs.
+        if _N8N_EXECUTE_PATTERN.search(query):
+            plan.profile = "FAST"
+            plan.requires_tools = True
+            plan.confidence = 0.99
+            plan.top_k_rag = 0
+            plan.steps.append(ExecutionStep(step_id=1, action_type="tool", target="code_execution"))
+            return plan
+        
+        if _N8N_MEMORY_PATTERN.search(query):
+            plan.profile = "MEMORY"
+            plan.requires_memory = True
+            plan.confidence = 0.99
+            plan.top_k_rag = 0
+            plan.steps.append(ExecutionStep(step_id=1, action_type="memory", target="facts"))
+            return plan
+        
+        if _N8N_WEBSEARCH_PATTERN.search(query):
+            plan.profile = "FAST"
+            plan.requires_tools = True
+            plan.confidence = 0.98
+            plan.top_k_rag = 0
+            plan.steps.append(ExecutionStep(step_id=1, action_type="tool", target="web_search"))
+            return plan
 
         # ── ALWAYS conversation first — never tools ────────────────
         if _CONVERSATION_PATTERNS.search(query_lower):

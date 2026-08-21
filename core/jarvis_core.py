@@ -272,24 +272,33 @@ class JarvisCore:
     # ====================================================================
 
     async def process_stream(
-        self, user_input: str, history: Optional[list] = None
+        self, user_input: str, history: Optional[list] = None, session_id: str = "default"
     ) -> AsyncGenerator[BaseEvent, None]:
-        """Unified execution pipeline with agent loop for tool calling."""
+        """Unified execution pipeline with agent loop for tool calling.
+        
+        Args:
+            user_input: The user's message/query
+            history: Optional conversation history (if None, loaded from conversation_store)
+            session_id: Session identifier for isolated conversation storage (n8n integration)
+        """
         request_start = time.time()
         request_id = f"req_{int(request_start * 1000)}"
         
-        logger.info("[%s] [PROCESS_START] user_input='%s', length=%d", request_id, user_input, len(user_input))
+        logger.info("[%s] [PROCESS_START] user_input='%s', length=%d, session_id=%s", 
+                    request_id, user_input, len(user_input), session_id)
         
         if not self._booted:
             logger.info("[%s] [BOOT] Booting JarvisCore", request_id)
             self.boot()
 
         # Load conversation history from conversation_store if not provided
+        # Use session_id to load isolated history for n8n sessions
         if history is None:
             try:
                 from core.conversation_store import conversation_store
-                history = conversation_store.messages(limit=8)
-                logger.info("[%s] [SESSION] loaded %d messages from history", request_id, len(history))
+                history = conversation_store.messages(limit=8, session_id=session_id)
+                logger.info("[%s] [SESSION] loaded %d messages from history (session=%s)", 
+                           request_id, len(history), session_id)
             except Exception as e:
                 logger.warning("[%s] [SESSION] failed to load history: %s", request_id, e)
                 history = []
@@ -677,7 +686,7 @@ class JarvisCore:
                 final_text = "Done."
             logger.info("[%s] [RESPONSE] %s", request_id, final_text[:200].replace("\n", " "))
             
-            # Save to conversation store
+            # Save to conversation store (with session isolation for n8n)
             try:
                 from core.conversation_store import conversation_store
                 conversation_store.append(
@@ -685,9 +694,10 @@ class JarvisCore:
                     assistant=final_text,
                     provider=self.brain_adapter.provider,
                     model=self.brain_adapter.primary_model,
-                    tier="desktop"
+                    tier="desktop",
+                    session_id=session_id  # Pass session_id for isolated storage
                 )
-                logger.info("[%s] [SESSION] saved conversation turn", request_id)
+                logger.info("[%s] [SESSION] saved conversation turn (session=%s)", request_id, session_id)
             except Exception as e:
                 logger.warning("[%s] [SESSION] failed to save conversation: %s", request_id, e)
             
